@@ -22,7 +22,7 @@ bash Anaconda3-2021.11-Linux-x86_64.sh -b -p ~/anaconda3
 source ~/anaconda3/bin/activate
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 
-git clone https://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@github.com/learning-at-home/calm
+git clone https://github.com/NCAI-Research/CALM/
 pip install https://github.com/learning-at-home/hivemind/archive/calm.zip
 cd calm && pip install -q -r requirements.txt &> log
 
