@@ -31,10 +31,14 @@ class MLMTrainingTask:
     def __init__(
         self, peer_args: BasePeerArguments, trainer_args: HFTrainerArguments, collab_args: CollaborativeArguments
     ):
+
         self.peer_args, self.trainer_args, self.collab_args = peer_args, trainer_args, collab_args
-        self.trainer_args.run_name = self.authorizer.username  # For wandb
         self.validators, self.local_public_key = utils.make_validators(self.peer_args.run_id)
+
+        if self.authorizer:
+            self.trainer_args.run_name = self.authorizer.username  # For wandb
         transformers.set_seed(trainer_args.seed)  # seed used for initialization
+
         self.config = LeanAlbertConfig.from_pretrained(peer_args.model_config_path)
         self.tokenizer = AutoTokenizer.from_pretrained(peer_args.tokenizer_path, cache_dir=peer_args.cache_dir)
 

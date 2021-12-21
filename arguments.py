@@ -107,7 +107,7 @@ class BasePeerArguments:
         default="aubmindlab/bert-base-arabert", metadata={"help": "Path to the tokenizer"}
     )
     cache_dir: Optional[str] = field(default="./cache", metadata={"help": "Path to the cache"})
-    authorize: bool = field(default=False, metadata={"help": "Whether or not to use HF authorizer"})
+    authorize: bool = field(default=True, metadata={"help": "Whether or not to use HF authorizer"})
     client_mode: bool = field(
         default=False,
         metadata={"help": "Of True, runs training without incoming connections, in a firewall-compatible mode"},
