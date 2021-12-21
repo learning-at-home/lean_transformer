@@ -8,8 +8,8 @@ from transformers import PretrainedConfig
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutput
 
-from lib import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules import LeanFFN, LeanSelfAttention
+from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import AdaptedLinear, SharedLinear, SharedMatrix
 
 
