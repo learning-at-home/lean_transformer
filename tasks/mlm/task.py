@@ -1,3 +1,4 @@
+import ctypes
 import os
 from dataclasses import asdict
 from pathlib import Path
@@ -15,6 +16,7 @@ from arguments import BasePeerArguments, CollaborativeArguments, HFTrainerArgume
 from huggingface_auth import authorize_with_huggingface
 from lib.models import LeanAlbertConfig, LeanAlbertForPreTraining
 from lib.training.lamb_8bit import CPULAMB8Bit
+import multiprocessing as mp
 
 from .whole_word_mask import DataCollatorForWholeWordMask
 from .data import make_training_dataset
@@ -55,6 +57,9 @@ class MLMTrainingTask:
             self.model = LeanAlbertForPreTraining.from_pretrained(latest_checkpoint_dir)
         if trainer_args.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
+
+        self.current_sequence_length = mp.Value(ctypes.c_int64, self.trainer_args.max_sequence_length)
+        self.update_sequence_length()  # updated by callback
 
     @property
     def authorizer(self):
@@ -150,9 +155,35 @@ class MLMTrainingTask:
             self._training_dataset = make_training_dataset(
                 self.tokenizer,
                 shuffle_seed=hash(self.local_public_key) % 2 ** 31,
-                max_sequence_length=self.trainer_args.seq_length,
+                max_sequence_length=self.current_sequence_length,  # this is a mp.Value that will be changed later
             )
         return self._training_dataset
+
+    def update_sequence_length(self):
+        """
+        If ramp-up is enabled, start with smaller sequences of initial_sequence_length tokens, then increase linearly
+        to the max_sequence_length over the period of first
+        """
+        current_epoch = self._collaborative_optimizer.tracker.global_epoch
+        if self.trainer_args.sequence_length_warmup_steps == 0 or current_epoch > self.trainer_args.sequence_length_warmup_steps:
+            current_sequence_length = self.trainer_args.max_sequence_length
+        else:
+            increment_size = self.trainer_args.pad_to_multiple_of
+            max_sequence_length = self.trainer_args.max_sequence_length
+            initial_sequence_length = self.trainer_args.initial_sequence_length or increment_size
+            sequence_length_warmup_steps = self.trainer_args.sequence_length_warmup_steps
+            assert sequence_length_warmup_steps > 0 and max_sequence_length >= initial_sequence_length
+            length_range = max_sequence_length - initial_sequence_length
+            warmup_relative = min(1, current_epoch / sequence_length_warmup_steps)
+            current_sequence_length = initial_sequence_length + warmup_relative * length_range
+            current_sequence_length = (current_sequence_length // increment_size) * increment_size
+            current_sequence_length = min(max(current_sequence_length, initial_sequence_length), max_sequence_length)
+
+        current_sequence_length = int(current_sequence_length)
+        if current_sequence_length != self.current_sequence_length.value:
+            logger.info(f"Beginning transition to sequence length {current_sequence_length}")
+            self.current_sequence_length.value = current_sequence_length
+            # note: it may take time for new sequence length to take effect due to buffering
 
     @property
     def data_collator(self):

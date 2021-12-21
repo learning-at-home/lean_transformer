@@ -47,8 +47,6 @@ class HFTrainerArguments(TrainingArguments):
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     gradient_accumulation_steps: int = 1
-    seq_length: int = 512
-    pad_to_multiple_of: int = 8
 
     learning_rate: float = 0.0025
     total_steps: int = 31250  # total number of collaborative optimizer updates, used for learning rate schedule
@@ -60,8 +58,14 @@ class HFTrainerArguments(TrainingArguments):
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0  # clipping performed by the optimizer; trainer is modified to disable builtin clipping
     clamp_value: float = 1e9  # no clipping by value
+
     gradient_checkpointing: bool = False  # can be enabled to save memory at the cost of ~30% slower training
     fp16: bool = False  # can be enabled depending on the device
+
+    max_sequence_length: int = 512
+    sequence_length_warmup_steps: int = 10_000
+    initial_sequence_length: Optional[int] = 128  # used only if warmup > 0, default = pad_to_multiple_of
+    pad_to_multiple_of: int = 32  # sequence length will be divisible by this value
 
     output_dir: str = "outputs"
     logging_steps: int = 100
