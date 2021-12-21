@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def make_training_dataset(
     tokenizer,
     *,
-    shuffle_buffer_size: int = 10 ** 3,
+    shuffle_buffer_size: int = 10 ** 4,
     shuffle_seed: Optional[int] = None,
     preprocessing_batch_size: int = 256,
     max_sequence_length: Union[int, mp.sharedctypes.Synchronized],
@@ -50,7 +50,7 @@ def make_training_dataset(
     gulf = gulf.map(lambda x: {"text": x["text"]}, batched=True)
 
     # merge, shuffle and set pytorch format
-    dataset = interleave_datasets([wiki, gulf, oscar], probabilities=[0.25, 0.25, 0.5])
+    dataset = interleave_datasets([wiki, gulf, oscar], probabilities=[0.1, 0.25, 0.65])
     dataset = dataset.shuffle(shuffle_buffer_size, seed=shuffle_seed)
     # ^-- this creates a buffer of random examples that will be refilled in background
 
