@@ -88,7 +88,6 @@ class MLMTrainingTask:
             averaging_compression = SizeAdaptiveCompression(
                 threshold=2 ** 16 + 1, less=Float16Compression(), greater_equal=Uniform8BitQuantization()
             )
-            state_compression = hivemind.Float16Compression()
 
             self._collaborative_optimizer = hivemind.Optimizer(
                 dht=self.dht,
@@ -98,7 +97,6 @@ class MLMTrainingTask:
                 scheduler=self._make_scheduler,
                 grad_compression=averaging_compression,
                 state_averaging_compression=averaging_compression,
-                load_state_compression=state_compression,
                 batch_size_per_step=self.trainer_args.batch_size_per_step,
                 client_mode=self.peer_args.client_mode,
                 verbose=True,
