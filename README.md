@@ -120,7 +120,7 @@ Please copy this address and use it as ``--initial_peers`` with GPU/TPU trainers
 
 
 <details>
-  <summary><b>3. Setting up a GPU (or TPU) worker</b></summary>
+  <summary><b>3. Setting up a GPU (or TPU) workers</b></summary>
 </details>
 
 <details>
