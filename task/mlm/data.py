@@ -3,13 +3,17 @@ import os
 import random
 from collections import defaultdict
 from functools import partial
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import nltk
 import torch.utils.data
 from datasets import interleave_datasets, load_dataset
 from prefetch_generator import BackgroundGenerator
+import multiprocessing as mp
+import multiprocessing.sharedctypes
+import ctypes
 
+from task.mlm.data_cleaning import clean_sentence
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +24,11 @@ def make_training_dataset(
     shuffle_buffer_size: int = 10 ** 3,
     shuffle_seed: Optional[int] = None,
     preprocessing_batch_size: int = 256,
-    max_sequence_length: int,
+    max_sequence_length: Union[int, mp.sharedctypes.Synchronized],
 ):
+    if not isinstance(max_sequence_length, mp.sharedctypes.Synchronized):
+        assert isinstance(max_sequence_length, int)
+        max_sequence_length = mp.Value(ctypes.c_int64, max_sequence_length)
     assert os.getenv("HF_USER_ACCESS_TOKEN") is not None, (
         "Loading members-only data requires that you provide your"
         " HF access token (HF_USER_ACCESS_TOKEN environment variable)"
@@ -61,7 +68,23 @@ def sent_tokenize(text: str) -> List[str]:
     return [sent.replace("@@ ?", "؟") for sent in nltk.sent_tokenize(text.replace("؟", "@@ ?"))]
 
 
-def create_instances_from_document(tokenizer, document, max_sequence_length):
+def tokenize_function(tokenizer, examples, max_sequence_length: mp.sharedctypes.Synchronized):
+    # Remove empty texts
+    texts = [text for text in examples["text"] if len(text) > 0 and not text.isspace()]
+    new_examples = defaultdict(list)
+
+    for text in texts:
+        try:
+            instances = create_instances_from_document(tokenizer, text, int(max_sequence_length.value))
+            for instance in instances:
+                for key, value in instance.items():
+                    new_examples[key].append(value)
+        except Exception as e:
+            logger.warning(f"Caught {e} in create_instances_from_document, ignoring...", exc_info=True)
+    return new_examples
+
+
+def create_instances_from_document(tokenizer, document, max_sequence_length: int):
     """Creates `TrainingInstance`s for a single document."""
     # We DON'T just concatenate all of the tokens from a document into a long
     # sequence and choose an arbitrary split point because this would make the
@@ -136,22 +159,6 @@ def create_instances_from_document(tokenizer, document, max_sequence_length):
             current_chunk = []
             current_length = 0
     return instances
-
-
-def tokenize_function(tokenizer, examples, max_sequence_length):
-    # Remove empty texts
-    texts = [text for text in examples["text"] if len(text) > 0 and not text.isspace()]
-    new_examples = defaultdict(list)
-
-    for text in texts:
-        try:
-            instances = create_instances_from_document(tokenizer, text, max_sequence_length)
-            for instance in instances:
-                for key, value in instance.items():
-                    new_examples[key].append(value)
-        except Exception as e:
-            logger.warning(f"Caught {e} in create_instances_from_document, ignoring...", exc_info=True)
-    return new_examples
 
 
 class WrappedIterableDataset(torch.utils.data.IterableDataset):
