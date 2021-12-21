@@ -1,13 +1,16 @@
 import logging
+import os
 import random
 from collections import defaultdict
 from functools import partial
-from typing import List, Optional, Sequence
+from typing import List, Optional
 
 import nltk
 import torch.utils.data
 from datasets import interleave_datasets, load_dataset
 from prefetch_generator import BackgroundGenerator
+
+from .data_cleaning import preprocess
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +39,9 @@ def make_training_dataset(
         raise Exception("Failed to load CALM-Gulf dataset, this is likely because your HF_USER_ACCESS_TOKEN is invalid")
 
     # both should have the same columns
-    wiki = wiki.map(lambda x: {"text": x["text"]}, batched=True)
-    oscar = oscar.map(lambda x: {"text": x["text"]}, batched=True)
-    gulf = gulf.map(lambda x: {"text": [*iter(x.keys()), *iter(x.values())]}, batched=True)
+    wiki = wiki.map(lambda x: {"text": preprocess(x["text"])}, batched=True)
+    oscar = oscar.map(lambda x: {"text": preprocess(x["text"])}, batched=True)
+    gulf = gulf.map(lambda x: {"text": preprocess(x["text"], is_tweet=True)}, batched=True)
 
     # merge, shuffle and set pytorch format
     dataset = interleave_datasets([wiki, gulf, oscar], probabilities=[0.25, 0.25, 0.5])
