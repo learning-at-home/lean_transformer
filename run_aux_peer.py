@@ -108,7 +108,7 @@ if __name__ == "__main__":
         averaging_thread.start()
 
     while True:
-        metrics_entry = dht.get(peer_args.experiment_prefix + "_metrics", latest=True)
+        metrics_entry = dht.get(peer_args.run_id + "_metrics", latest=True)
         if metrics_entry is not None and len(metrics_entry.value) > 0:
             metrics_dict = metrics_entry.value
             metrics = [utils.LocalMetrics.parse_obj(metrics_dict[peer].value) for peer in metrics_dict]
