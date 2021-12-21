@@ -27,7 +27,7 @@ def main():
         logger.warning("Please specify at least one network endpoint in initial peers.")
 
     utils.setup_logging(trainer_args)
-    task = TrainingTask(training_peer_args, trainer_args, collab_args)
+    task = MLMTrainingTask(training_peer_args, trainer_args, collab_args)
     model = task.model.to(trainer_args.device)
 
     collaborative_callback = callback.CollaborativeCallback(task, training_peer_args)
