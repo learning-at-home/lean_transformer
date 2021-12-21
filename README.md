@@ -29,6 +29,10 @@ cd calm && pip install -q -r requirements.txt &> log
 # re-install bitsandbytes for the actual CUDA version
 pip uninstall -y bitsandbytes-cuda111
 pip install -y bitsandbytes-cuda113==0.26.0
+
+curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
+sudo apt-get install git-lfs
+git lfs install
 ```
 
 
@@ -41,6 +45,8 @@ Run auxiliary worker:
 curl -L https://www.dropbox.com/s/p1hi93ahy5295jf/p2p-keygen?dl=1 > p2p-keygen
 chmod +x p2p-keygen
 ./p2p-keygen -f ./identity
+
+
 ```
 This ensures that if you restart the peer during, it will have the same identity, which is useful if others use your worker as initial peer.
 
