@@ -8,7 +8,7 @@ import transformers
 from hivemind import Float16Compression, SizeAdaptiveCompression, Uniform8BitQuantization
 from hivemind.optim.experimental.state_averager import LRSchedulerBase, ParamGroups
 from torch.optim.lr_scheduler import LambdaLR
-from transformers import AlbertTokenizerFast
+from transformers import AutoTokenizer
 
 import utils
 from arguments import BasePeerArguments, CollaborativeArguments, HFTrainerArguments
@@ -36,7 +36,7 @@ class MLMTrainingTask:
         self.validators, self.local_public_key = utils.make_validators(self.peer_args.run_id)
         transformers.set_seed(trainer_args.seed)  # seed used for initialization
         self.config = LeanAlbertConfig.from_pretrained(peer_args.model_config_path)
-        self.tokenizer = AlbertTokenizerFast.from_pretrained(peer_args.tokenizer_path, cache_dir=peer_args.cache_dir)
+        self.tokenizer = AutoTokenizer.from_pretrained(peer_args.tokenizer_path, cache_dir=peer_args.cache_dir)
 
         output_dir = Path(trainer_args.output_dir)
         logger.info(f'Checkpoint dir {output_dir}, contents {list(output_dir.glob("checkpoint*"))}')
