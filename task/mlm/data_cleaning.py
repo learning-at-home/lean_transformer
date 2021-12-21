@@ -63,7 +63,7 @@ arabic_diacritics = re.compile("""
                          """, re.VERBOSE)
 
 
-def preprocess(text: str, is_tweet: bool = False):
+def clean_sentence(text: str, is_tweet: bool = False):
     # Replace @username with empty string
     text = re.sub('@[^\s]+', ' ', str(text))
 
