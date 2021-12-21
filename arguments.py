@@ -104,7 +104,7 @@ class BasePeerArguments:
         default="./tasks/mlm/model.json", metadata={"help": "Path to the model config"}
     )
     tokenizer_path: Optional[str] = field(
-        default="kuisailab/albert-base-arabic", metadata={"help": "Path to the tokenizer"}
+        default="aubmindlab/bert-base-arabert", metadata={"help": "Path to the tokenizer"}
     )
     cache_dir: Optional[str] = field(default="./cache", metadata={"help": "Path to the cache"})
     authorize: bool = field(default=False, metadata={"help": "Whether or not to use HF authorizer"})
