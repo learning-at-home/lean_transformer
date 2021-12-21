@@ -80,7 +80,7 @@ class CheckpointHandler:
             logger.warning("Ensure that your access token is valid and has WRITE permissions")
 
 
-def assist_averaging_in_background(task: TrainingTask, peer_args: AuxiliaryPeerArguments):
+def assist_averaging_in_background(task: MLMTrainingTask, peer_args: AuxiliaryPeerArguments):
     while True:
         time.sleep(peer_args.assist_refresh)
         task.collaborative_optimizer.step()
