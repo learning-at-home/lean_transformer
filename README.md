@@ -115,11 +115,15 @@ python run_aux_peer.py --run_id $EXP_NAME --host_maddrs $LISTEN_ON --announce_ma
 If everything went right, it will print its address as such:
 ![image](https://user-images.githubusercontent.com/3491902/146950956-0ea06e77-15b4-423f-aeaa-02eb6aec06db.png)
 
-
 Please copy this address and use it as ``--initial_peers`` with GPU/TPU trainers and other auxiliary peers.
 </details>
 
 
 <details>
-  <summary><b> Setting up a GPU (or TPU) worker</b></summary>
+  <summary><b>3. Setting up a GPU (or TPU) worker</b></summary>
+</details>
+
+<details>
+  <summary><b>Best (and worst) practices (TBA)</b></summary>
+  TBA
 </details>
