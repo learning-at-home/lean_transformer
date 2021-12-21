@@ -14,7 +14,7 @@ import utils
 from arguments import BasePeerArguments, CollaborativeArguments, HFTrainerArguments
 from huggingface_auth import authorize_with_huggingface
 from lib.models import LeanAlbertConfig, LeanAlbertForPreTraining
-from lib.training.clipped_lamb import LambWithGradientClipping
+from lib.training.lamb_8bit import CPULAMB8Bit
 
 from .whole_word_mask import DataCollatorForWholeWordMask
 from .data import make_training_dataset
@@ -121,7 +121,7 @@ class MLMTrainingTask:
         ]
 
     def _make_optimizer(self, param_groups: ParamGroups) -> torch.optim.Optimizer:
-        return LambWithGradientClipping(
+        return CPULAMB8Bit(
             param_groups,
             lr=self.trainer_args.learning_rate,
             betas=(self.trainer_args.adam_beta1, self.trainer_args.adam_beta2),
@@ -129,7 +129,8 @@ class MLMTrainingTask:
             clamp_value=self.trainer_args.clamp_value,
             eps=self.trainer_args.adam_epsilon,
             weight_decay=self.trainer_args.weight_decay,
-            debias=True,
+            reuse_grad_buffers=True,
+            bias_correction=True
         )
 
     def _make_scheduler(self, optimizer: torch.optim.Optimizer) -> LRSchedulerBase:
