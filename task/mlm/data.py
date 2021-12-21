@@ -10,7 +10,6 @@ import torch.utils.data
 from datasets import interleave_datasets, load_dataset
 from prefetch_generator import BackgroundGenerator
 
-from .data_cleaning import preprocess
 
 logger = logging.getLogger(__name__)
 
@@ -27,21 +26,21 @@ def make_training_dataset(
         "Loading members-only data requires that you provide your"
         " HF access token (HF_USER_ACCESS_TOKEN environment variable)"
     )
-    wiki = load_dataset("CALM/arwiki", split="train", streaming=True)
+    wiki = load_dataset("CALM/arwiki", split="train", data_files=['arwiki_2021_bigger_chuncks/*'], streaming=True)
     oscar = load_dataset("oscar", "unshuffled_deduplicated_ar", split="train", streaming=True)
 
     try:
         # loading the guld dataset that is private within the CALM organization, it requires HF user access token
         gulf = load_dataset(
-            "CALM/CALM-Gulf", use_auth_token=os.getenv("HF_USER_ACCESS_TOKEN"), split="train", streaming=True
+            "CALM/CALM-Gulf", data_files=['GulfData.csv'], use_auth_token=os.getenv("HF_USER_ACCESS_TOKEN"), split="train", streaming=True
         )
     except FileNotFoundError:
         raise Exception("Failed to load CALM-Gulf dataset, this is likely because your HF_USER_ACCESS_TOKEN is invalid")
 
     # both should have the same columns
-    wiki = wiki.map(lambda x: {"text": preprocess(x["text"])}, batched=True)
-    oscar = oscar.map(lambda x: {"text": preprocess(x["text"])}, batched=True)
-    gulf = gulf.map(lambda x: {"text": preprocess(x["text"], is_tweet=True)}, batched=True)
+    wiki = wiki.map(lambda x: {"text": x["text"]}, batched=True)
+    oscar = oscar.map(lambda x: {"text": x["text"]}, batched=True)
+    gulf = gulf.map(lambda x: {"text": x["text"]}, batched=True)
 
     # merge, shuffle and set pytorch format
     dataset = interleave_datasets([wiki, gulf, oscar], probabilities=[0.25, 0.25, 0.5])
@@ -73,7 +72,7 @@ def create_instances_from_document(tokenizer, document, max_sequence_length):
     current_chunk = []
     current_length = 0
 
-    segmented_sents = sent_tokenize(document)
+    segmented_sents = list(map(clean_sentence, sent_tokenize(document)))
 
     for i, sent in enumerate(segmented_sents):
         current_chunk.append(sent)
@@ -115,12 +114,13 @@ def create_instances_from_document(tokenizer, document, max_sequence_length):
                     # is more efficient when it receives the `special_tokens_mask`.
                     return_special_tokens_mask=True,
                 )
+                assert isinstance(instance["input_ids"][0], int)
                 assert len(instance["input_ids"]) <= max_sequence_length
                 instance["sentence_order_label"] = 1 if is_random_next else 0
                 instances.append(instance)
             elif len(current_chunk) == 1:
                 instance = tokenizer(
-                    current_chunk,
+                    current_chunk[0],
                     padding="max_length",
                     truncation="longest_first",
                     max_length=max_sequence_length,
@@ -128,6 +128,7 @@ def create_instances_from_document(tokenizer, document, max_sequence_length):
                     # is more efficient when it receives the `special_tokens_mask`.
                     return_special_tokens_mask=True,
                 )
+                assert isinstance(instance["input_ids"][0], int)
                 assert len(instance["input_ids"]) <= max_sequence_length
                 instance["sentence_order_label"] = 0
                 instances.append(instance)
