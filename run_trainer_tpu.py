@@ -12,7 +12,7 @@ from arguments import (CollaborativeArguments, TPUTrainerArguments,
                        TrainingPeerArguments)
 from callback import CollaborativeCallback
 from lib.training.tpu import TPUManager
-from task.mlm.task import MLMTrainingTask
+from tasks.mlm.task import MLMTrainingTask
 
 use_hivemind_log_handler("in_root_logger")
 logger = get_logger()

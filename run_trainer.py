@@ -12,7 +12,7 @@ import utils
 from arguments import (CollaborativeArguments, HFTrainerArguments,
                        TrainingPeerArguments)
 from lib.training.hf_trainer import CollaborativeHFTrainer
-from task.mlm.task import MLMTrainingTask
+from tasks.mlm.task import MLMTrainingTask
 
 use_hivemind_log_handler("in_root_logger")
 logger = get_logger()

@@ -7,7 +7,7 @@ import transformers
 from transformers import TrainingArguments
 
 from arguments import TrainingPeerArguments
-from task.mlm.task import MLMTrainingTask
+from tasks.mlm.task import MLMTrainingTask
 from utils import LocalMetrics, logger
 
 

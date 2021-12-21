@@ -13,7 +13,7 @@ import multiprocessing as mp
 import multiprocessing.sharedctypes
 import ctypes
 
-from task.mlm.data_cleaning import clean_sentence
+from tasks.mlm.data_cleaning import clean_sentence
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ def create_instances_from_document(tokenizer, document, max_sequence_length: int
     """Creates `TrainingInstance`s for a single document."""
     # We DON'T just concatenate all of the tokens from a document into a long
     # sequence and choose an arbitrary split point because this would make the
-    # next sentence prediction task too easy. Instead, we split the input into
+    # next sentence prediction tasks too easy. Instead, we split the input into
     # segments "A" and "B" based on the actual "sentences" provided by the user
     # input.
     instances = []

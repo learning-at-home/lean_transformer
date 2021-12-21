@@ -12,7 +12,7 @@ from transformers import HfArgumentParser
 import utils
 from arguments import (AuxiliaryPeerArguments, CollaborativeArguments,
                        HFTrainerArguments)
-from task.mlm.task import MLMTrainingTask
+from tasks.mlm.task import MLMTrainingTask
 
 transformers.utils.logging.set_verbosity_warning()
 use_hivemind_log_handler("in_root_logger")
