@@ -116,8 +116,8 @@ class BasePeerArguments:
         default=False,
         metadata={"help": "If True, runs training without incoming connections, in a firewall-compatible mode"},
     )
-    bandwidth: float = field(
-        default=100,
+    bandwidth: Optional[float] = field(
+        default=None,
         metadata={"help": "Min(upload & download speed) in megabits/s, used to assign averaging tasks between peers"},
     )
     min_vector_size: int = 4_000_000  # minimum slice of gradients assigned to one reducer, should be same across peers
