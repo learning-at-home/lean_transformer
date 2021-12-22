@@ -129,7 +129,7 @@ Please copy this address and use it as ``--initial_peers`` with GPU/TPU trainers
 
 
 <details>
-  <summary><b>3. Setting up trainers</b></summary>
+  <summary><b>3. Setting up a trainer</b></summary>
 Trainers are peers with GPUs (or other compute accelerators) that compute gradients, average them via all-reduce and perform optimizer steps.
 There are two broad types of trainers: normal (full) peers and client mode peers. Client peers rely on others to average their gradients, but otherwise behave same as full peers. You can designate your trainer as a client-only using the `--client_mode` flag.
   
@@ -185,7 +185,8 @@ echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
 
 ulimit -n 16384 # this line is important, ignoring it may cause Too Many Open Files
 
-python run_trainer.py --run_id $EXP_NAME --per_device_train_batch_size 1 --gradient_accumulation_steps 1 --initial_peers $INITIAL_PEERS --bandwidth $BANDWIDTH
+python run_trainer.py --run_id $EXP_NAME --host_maddrs $LISTEN_ON --announce_maddrs $ANNOUNCE_ON --initial_peers $INITIAL_PEERS --bandwidth $BANDWIDTH \
+  --per_device_train_batch_size 1 --gradient_accumulation_steps 1
 # you can tune per_device_train_batch_size, gradient_accumulation steps, --fp16, --gradient_checkpoints based on the device. A good rule of thumb is that the device should compute (batch size x num accumulations) gradients over 1-10 seconds. Setting very large gradient_accumulation_steps can cause your peer to miss an averaging round.
 
 ```
