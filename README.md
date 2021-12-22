@@ -49,7 +49,7 @@ conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 
 git clone https://github.com/NCAI-Research/CALM/
 pip install https://github.com/learning-at-home/hivemind/archive/calm.zip
-cd calm && pip install -q -r requirements.txt &> log
+cd CALM && pip install -q -r requirements.txt &> log
 
 # re-install bitsandbytes for the actual CUDA version
 pip uninstall -y bitsandbytes-cuda111
@@ -148,7 +148,7 @@ conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 
 git clone https://github.com/NCAI-Research/CALM/
 pip install https://github.com/learning-at-home/hivemind/archive/calm.zip
-cd calm && pip install -q -r requirements.txt &> log
+cd CALM && pip install -q -r requirements.txt &> log
 
 # re-install bitsandbytes for the actual CUDA version
 pip uninstall -y bitsandbytes-cuda111
