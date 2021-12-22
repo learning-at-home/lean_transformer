@@ -129,9 +129,9 @@ Please copy this address and use it as ``--initial_peers`` with GPU/TPU trainers
 
 
 <details>
-  <summary><b>3. Setting up a GPU (or TPU) trainers</b></summary>
-  
-There are two broad types of trainers: normal (full) peers and client mode peers. Normal peers compute gradients, average them via all-reduce and perform optimizer steps. Client peers do the same, except that they rely on others to average their gradients. You can designate a trainer as a client-only by specifying `--client_mode` flag.
+  <summary><b>3. Setting up a trainers</b></summary>
+Trainers are peers with GPUs (or other compute accelerators) that compute gradients, average them via all-reduce and perform optimizer steps.
+There are two broad types of trainers: normal (full) peers and client mode peers. Client peers rely on others to average their gradients, but otherwise behave same as full peers. You can designate your trainer as a client-only using the `--client_mode` flag.
   
 __When do I need client mode?__ if a peer is unreliable (e.g. will likely be gone in 1 hour) OR sits behind a firewall that blocks incoming connections OR has very unstable internet connection, it should be a client. For instance, it is recommended to set colab / kaggle peers as clients. In turn, cloud GPUs (even spot instances!) are generally more reliable and should be full peers.
 
