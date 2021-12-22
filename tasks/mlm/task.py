@@ -111,7 +111,7 @@ class MLMTrainingTask:
         return self._collaborative_optimizer
 
     def _make_param_groups(self) -> ParamGroups:
-        no_decay = ["bias"]
+        no_decay = ["bias", "_norm.weight"]
         return [
             {
                 "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
