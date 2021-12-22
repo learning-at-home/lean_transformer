@@ -181,7 +181,7 @@ class MLMTrainingTask:
 
         current_sequence_length = int(current_sequence_length)
         if current_sequence_length != self.current_sequence_length.value:
-            logger.info(f"Beginning transition to sequence length {current_sequence_length}")
+            logger.info(f"Transitioning to sequence length {current_sequence_length}")
             self.current_sequence_length.value = current_sequence_length
             # note: it may take time for new sequence length to take effect due to buffering
 
