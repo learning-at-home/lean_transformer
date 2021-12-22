@@ -168,7 +168,7 @@ export CUDA_VISIBLE_DEVICES=0  # supports multiple cuda devices!
 export WANDB_ENTITY=CALM
 export HF_ORGANIZATION_NAME=CALM
 export EXP_NAME=CALM
-export WANDB_PROJECT=$EXP_NAME
+export WANDB_PROJECT=$EXP_NAME-hivemind-trainers
 export HF_MODEL_NAME=$EXP_NAME
 
 export WANDB_API_KEY=TODO_get_your_wandb_key_here_https://wandb.ai/authorize_OR_just_login_on_wandb
