@@ -100,7 +100,7 @@ export WANDB_API_KEY=TODO_get_your_wandb_key_here_wandb.ai/authorize
 export HF_USER_ACCESS_TOKEN=TODO_create_user_access_token_here_with_WRITE_permissions_https://huggingface.co/settings/token
 # note: you can avoid setting the two tokens above: in that case, the script will ask you to login to wandb and huggingface
   
-curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/mawandb.ai/authorizester/speedtest.py | python -  --json > speedtest.json
+curl -s https://gist.githubusercontent.com/justheuristic/5467799d8f2ad59b36fa75f642cc9b87/raw/c5a4b9b66987c2115e6c54a07d97e0104dfbcd97/speedtest.py | python -  --json > speedtest.json
 export BANDWIDTH=`python -c "import json; speedtest = json.load(open('speedtest.json')); print(int(max(1, min(speedtest['upload'], speedtest['download']) / 1e6)))"`
 echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
 ```
