@@ -76,11 +76,6 @@ class DataCollatorForWholeWordMask(DataCollatorForLanguageModeling):
         """
         Get 0/1 labels for masked tokens with whole word mask proxy
         """
-        if not isinstance(self.tokenizer, (AlbertTokenizer, AlbertTokenizerFast)):
-            warnings.warn(
-                "AlbertDataCollatorForWholeWordMask is only suitable for AlbertTokenizer-like tokenizers."
-            )
-
         cand_indexes = []
         num_tokens_exc_pad = 0
         for i, token in enumerate(input_tokens):
