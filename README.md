@@ -34,7 +34,7 @@ We are there to provide any assistance needed, please make sure to join our [![O
 
 Here you can find the best practices that we learned from running the CALM experiment. These may help you set up your own collaborative experiment.
 
-If your training run is not confidential, feel free to ask for help on the [hivemind discord channel](https://discord.gg/uGugx9zYvN)
+If your training run is not confidential, feel free to ask for help on the [hivemind discord channel](https://discord.gg/vRNN9ua2)
 
 <details>
   <summary><b> 1. Choose and verify your training configuration</b></summary>  
