@@ -129,7 +129,7 @@ Please copy this address and use it as ``--initial_peers`` with GPU/TPU trainers
 
 
 <details>
-  <summary><b>3. Setting up a trainers</b></summary>
+  <summary><b>3. Setting up trainers</b></summary>
 Trainers are peers with GPUs (or other compute accelerators) that compute gradients, average them via all-reduce and perform optimizer steps.
 There are two broad types of trainers: normal (full) peers and client mode peers. Client peers rely on others to average their gradients, but otherwise behave same as full peers. You can designate your trainer as a client-only using the `--client_mode` flag.
   
