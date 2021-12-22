@@ -49,7 +49,7 @@ conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 
 git clone https://github.com/NCAI-Research/CALM/
 pip install https://github.com/learning-at-home/hivemind/archive/calm.zip
-cd calm && pip install -q -r requirements.txt &> log
+cd CALM && pip install -q -r requirements.txt &> log
 
 # re-install bitsandbytes for the actual CUDA version
 pip uninstall -y bitsandbytes-cuda111
@@ -129,7 +129,7 @@ Please copy this address and use it as ``--initial_peers`` with GPU/TPU trainers
 
 
 <details>
-  <summary><b>3. Setting up a trainers</b></summary>
+  <summary><b>3. Setting up a trainer</b></summary>
 Trainers are peers with GPUs (or other compute accelerators) that compute gradients, average them via all-reduce and perform optimizer steps.
 There are two broad types of trainers: normal (full) peers and client mode peers. Client peers rely on others to average their gradients, but otherwise behave same as full peers. You can designate your trainer as a client-only using the `--client_mode` flag.
   
@@ -148,7 +148,7 @@ conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 
 git clone https://github.com/NCAI-Research/CALM/
 pip install https://github.com/learning-at-home/hivemind/archive/calm.zip
-cd calm && pip install -q -r requirements.txt &> log
+cd CALM && pip install -q -r requirements.txt &> log
 
 # re-install bitsandbytes for the actual CUDA version
 pip uninstall -y bitsandbytes-cuda111
@@ -168,7 +168,7 @@ export CUDA_VISIBLE_DEVICES=0  # supports multiple cuda devices!
 export WANDB_ENTITY=CALM
 export HF_ORGANIZATION_NAME=CALM
 export EXP_NAME=CALM
-export WANDB_PROJECT=$EXP_NAME
+export WANDB_PROJECT=$EXP_NAME-hivemind-trainers
 export HF_MODEL_NAME=$EXP_NAME
 
 export WANDB_API_KEY=TODO_get_your_wandb_key_here_https://wandb.ai/authorize_OR_just_login_on_wandb
@@ -185,7 +185,8 @@ echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
 
 ulimit -n 16384 # this line is important, ignoring it may cause Too Many Open Files
 
-python run_trainer.py --run_id $EXP_NAME --per_device_train_batch_size 1 --gradient_accumulation_steps 1 --initial_peers $INITIAL_PEERS --bandwidth $BANDWIDTH
+python run_trainer.py --run_id $EXP_NAME --host_maddrs $LISTEN_ON --announce_maddrs $ANNOUNCE_ON --initial_peers $INITIAL_PEERS --bandwidth $BANDWIDTH \
+  --per_device_train_batch_size 1 --gradient_accumulation_steps 1
 # you can tune per_device_train_batch_size, gradient_accumulation steps, --fp16, --gradient_checkpoints based on the device. A good rule of thumb is that the device should compute (batch size x num accumulations) gradients over 1-10 seconds. Setting very large gradient_accumulation_steps can cause your peer to miss an averaging round.
 
 ```
