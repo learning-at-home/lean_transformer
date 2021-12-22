@@ -105,7 +105,7 @@ class MLMTrainingTask:
                 batch_size_per_step=self.trainer_args.batch_size_per_step,
                 client_mode=self.peer_args.client_mode,
                 verbose=True,
-                averager_opts=dict(min_vector_size=4_000_000),
+                averager_opts=dict(min_vector_size=self.peer_args.min_vector_size, bandwidth=self.peer_args.bandwidth),
                 **asdict(self.collab_args),
             )
         return self._collaborative_optimizer

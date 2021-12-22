@@ -114,8 +114,13 @@ class BasePeerArguments:
     authorize: bool = field(default=True, metadata={"help": "Whether or not to use HF authorizer"})
     client_mode: bool = field(
         default=False,
-        metadata={"help": "Of True, runs training without incoming connections, in a firewall-compatible mode"},
+        metadata={"help": "If True, runs training without incoming connections, in a firewall-compatible mode"},
     )
+    bandwidth: float = field(
+        default=100,
+        metadata={"help": "Min(upload & download speed) in megabits/s, used to assign averaging tasks between peers"},
+    )
+    min_vector_size: int = 4_000_000  # minimum slice of gradients assigned to one reducer, should be same across peers
     initial_peers: List[str] = field(
         default_factory=list,
         metadata={
