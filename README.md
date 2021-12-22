@@ -13,15 +13,48 @@ Here you can find the best practices that we learned from running the CALM exper
 If your training run is not confidential, feel free to ask for help on the [hivemind discord channel](https://discord.gg/uGugx9zYvN)
 
 <details>
-  <summary><b> 1. Choose and verify your training configuration (TBA)</b></summary>  
-  To be updated. For now, please refer to "make your own" section of https://training-transformers-together.github.io .
+  <summary><b> 1. Choose and verify your training configuration</b></summary>  
   
-  TODO When transitioning to a new language or new dataset, it is important to check that the tokenizer/collator works as intended **before** you begin training. Here's a notebook that will help you verify that. If possible, it helps to train a small model (e.g. 6 layers, 512 hidden, 2048 ffn) locally to make sure everything works as intended.
+  Depending on you use case, you may want to change
+   - Dataset and preprocessing ([`data.py`](https://github.com/NCAI-Research/CALM/blob/main/tasks/mlm/data.py), [`data_cleaning.py`](https://github.com/NCAI-Research/CALM/blob/main/tasks/mlm/data_cleaning.py), [`whole_word_mask.py`](https://github.com/NCAI-Research/CALM/blob/main/tasks/mlm/whole_word_mask.py);
+   - Tokenizer (see [`arguments.py`](https://github.com/NCAI-Research/CALM/blob/main/arguments.py#L110-L112))
+   - Model config ([`model.json`](https://github.com/NCAI-Research/CALM/blob/main/tasks/mlm/model.json)
   
-  TODO about setting hyperparameters
   
-  TODO public training is most convenient with a HF organization. If you don't want to be public, you can run hivemind standalone as such.
-  TODO we log metrics to WANDB. If training privately, you can host wandb internally or set WANDB_DISABLED=true .
+  When transitioning to a new language or new dataset, it is important to check that the tokenizer/collator works as intended **before** you begin training.
+  The best way to do that is to manually look at training minibatches:
+  ```python
+  from tasks.mlm.data import make_training_dataset
+  from tasks.mlm.whole_word_mask import DataCollatorForWholeWordMask
+  
+  tokenizer = create_tokenizer_here(...)
+  dataset = make_training_dataset(tokenizer, max_sequence_length=...)  # see arguments.py
+  collator = DataCollatorForWholeWordMask(tokenizer, pad_to_multiple_of=...)  # see arguments.py
+  data_loader = torch.utils.data.DataLoader(dataset, collate_fn=collator, batch_size=4)
+
+  # generate a few batches
+  rows = []
+  with tqdm(enumerate(data_loader)) as progress:
+      for i, row in progress:
+          rows.append(row)
+          if i > 10:
+              break
+  
+  # look into the training data
+  row_ix, sample_ix = 0, 1
+  sources = [tokenizer.decode([i]) for i in rows[row_ix]['input_ids'][sample_ix].data.numpy()]
+  print("MASK RATE:", (rows[row_ix]['input_ids'][sample_ix] == 4).data.numpy().sum() / (rows[row_ix]['input_ids'][sample_ix] != 0).data.numpy().sum())
+
+  for i in range(len(sources)):
+      if sources[i] == '[MASK]':
+          pass#sources[i] = '[[' + tokenizer.decode(rows[row_ix]['labels'][sample_ix][i].item()) + ']]'
+
+  print(' '.join(sources))
+  ```
+  
+  If you make many changes, it also helps to train a very model using your own device to check if everything works as intended. A good initial configuration is 6 layers, 512 hidden, 2048 intermediate).
+  
+  If you're training with volunteers, the most convenient way is to set up a Hugging Face organization. For instructions on that, see "make your own" section of https://training-transformers-together.github.io . We use WANDB for tracking logs and training progress: we've set up a [WandB team](https://docs.wandb.ai/ref/app/features/teams) named [CALM](https://wandb.ai/calm) for this experiment. Alternatively, you can use hivemind standalone (and even without internet access) by setting --authorize False and WANDB_DISABLED=true -- or manually removing the corresponding options from the code.
  
 </details>
 
@@ -73,9 +106,21 @@ chmod +x p2p-keygen
 
 
 ```
-This ensures that if you restart the peer during, it will have the same identity, which is useful if others use your worker as initial peer.
+This ensures that if you restart the peer during training, it will have the same identity, which is useful if others use your worker as initial peer.
+  
+3. Measure internet bandwidth and set `$BANDWIDTH` variable
+```bash
 
-3. Set environment variables
+# You can measure bandwidth automatically:
+curl -s https://gist.githubusercontent.com/justheuristic/5467799d8f2ad59b36fa75f642cc9b87/raw/c5a4b9b66987c2115e6c54a07d97e0104dfbcd97/speedtest.py | python -  --json > speedtest.json
+export BANDWIDTH=`python -c "import json; speedtest = json.load(open('speedtest.json')); print(int(max(1, min(speedtest['upload'], speedtest['download']) / 1e6)))"`
+echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
+  
+# If that doesn't work, you can simply `export BANDWIDTH=TODOyour_bandwidth_mbits_here` using the minimum of download and upload speed.
+```
+  
+
+4. Run the auxiliary peer
 ```bash
 export MY_IP=`curl --ipv4 -s http://whatismyip.akamai.com/`
 export PORT_THAT_I_OPENED=12345   # please choose a port where you can accept incoming tcp connections (or open that port if you're on a cloud)
@@ -100,13 +145,6 @@ export WANDB_API_KEY=TODO_get_your_wandb_key_here_wandb.ai/authorize
 export HF_USER_ACCESS_TOKEN=TODO_create_user_access_token_here_with_WRITE_permissions_https://huggingface.co/settings/token
 # note: you can avoid setting the two tokens above: in that case, the script will ask you to login to wandb and huggingface
   
-curl -s https://gist.githubusercontent.com/justheuristic/5467799d8f2ad59b36fa75f642cc9b87/raw/c5a4b9b66987c2115e6c54a07d97e0104dfbcd97/speedtest.py | python -  --json > speedtest.json
-export BANDWIDTH=`python -c "import json; speedtest = json.load(open('speedtest.json')); print(int(max(1, min(speedtest['upload'], speedtest['download']) / 1e6)))"`
-echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
-```
-
- __Actually run it:__
-```bash
 # activate your anaconda environment
 source ~/anaconda3/bin/activate
 
@@ -202,5 +240,6 @@ python run_trainer.py --run_id $EXP_NAME --host_maddrs $LISTEN_ON --announce_mad
 - client-to-averager ratio
 - gradient checkpointing
 - multiple GPUs per peer
+- if aux peers have less ram, you can assign it to only parts of functionality, e.g. disable --upload_interval
 </details>
 
