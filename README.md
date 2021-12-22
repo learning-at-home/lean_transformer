@@ -1,10 +1,34 @@
-# CALM: Collaborative Arabic Language Model
-The CALM project is joint effort lead by [NCAI](https://sdaia.gov.sa/ncai/?Lang=en) in collaboration with [Yandex](https://yandex.com/) and [HuggingFace](https://huggingface.co/) to train an Arabic language model with volunteers from around the globe. The project is an adaptation of the framework proposed at the NeurIPS 2021 demonstration: [Training Transformers Together](https://huggingface.co/training-transformers-together). 
+<img src="./assets/logo.png" width="200" alt="CALM Logo">
 
+# CALM: Collaborative Arabic Language Model
+
+The CALM project is joint effort lead by [NCAI](https://sdaia.gov.sa/ncai/?Lang=en) in collaboration with [Yandex](https://yandex.com/) and [HuggingFace](https://huggingface.co/) to train an Arabic language model with volunteers from around the globe. The project is an adaptation of the framework proposed at the NeurIPS 2021 demonstration: [Training Transformers Together](https://huggingface.co/training-transformers-together). 
 
 Once of the main obstacles facing many researchers in the Arabic NLP community is the lack of computing resources that are needed for training large models. Models with leading performane on Arabic NLP tasks, such as [AraBERT](https://github.com/aub-mind/arabert), [CamelBERT](https://github.com/CAMeL-Lab/CAMeLBERT), [AraELECTRA](https://huggingface.co/aubmindlab/araelectra-base-generator), and [QARiB](https://huggingface.co/qarib), took days to train on TPUs. In the spirit of democratization of AI and community enabling, a core value at NCAI, CALM aims to demonstrate the effectiveness of collaborative training and form a community of volunteers for ANLP researchers with basic level cloud GPUs who wish to train their own models collaboratively. 
 
 CALM trains a single BERT model on a dataset that combines MSA, Oscar and Arabic Wikipedia, and dialectal data for the gulf region from existing open source datasets. Each volunteer GPU trains the model locally at its own pace on a portion of the dataset while another portion is being streamed in the background to reduces local memory consumption. Computing the gradients and aggregating them is performed in a distributed manner, based on the computing abilities of each participating volunteer. Details of the distributed training process are further described in the paper [Deep Learning in Open Collaborations](https://papers.nips.cc/paper/2021/hash/41a60377ba920919939d83326ebee5a1-Abstract.html).
+
+## How to participate in training?
+
+To join the collaborative training, please follow these steps:
+
+1. Create an account on [Huggingface](https://huggingface.co).
+2. Join the [NCAI-CALM Organization](https://huggingface.co/CALM) on Huggingface through the invitation link shared with you by email.
+
+### Start training
+#### 1. Using Kaggle **(recommended)**
+[![Open In Kaggle](https://img.shields.io/badge/kaggle-Open%20in%20Kaggle-blue.svg)](https://www.kaggle.com/prmais/volunteer-gpu-notebook)
+
+Kaggle gives you around 40 hrs per week of GPU time, so it's preferred over Colab, unless it's a Colab Pro.
+
+#### 2. Using Google Colab
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/NCAI-Research/CALM/blob/main/notebooks/volunteer-gpu-notebook.ipynb)
+
+#### 3. Running locally
+If you have additional local computing GPUs, please visit our discord channel for instructions to set it.
+
+### Issues or questions?
+We are there to provide any assistance needed, please make sure to join our [![Open in discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/vRNN9ua2).
 
 ## How to host your own experiment?
 
