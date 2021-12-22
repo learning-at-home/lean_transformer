@@ -95,10 +95,12 @@ export HF_ORGANIZATION_NAME=CALM
 export EXP_NAME=CALM
 export WANDB_PROJECT=$EXP_NAME
 export HF_MODEL_NAME=$EXP_NAME
-export WANDB_API_KEY=TODO_get_your_wandb_key_here_https://wpython run_aux_peer.py --run_id $EXP_NAME --host_maddrs $LISTEN_ON --announce_maddrs $ANNOUNCE_ON --wandb_project $WANDB_PROJECT --identity ./identity --store_checkpoints --upload_interval 43200 --repo_url $HF_ORGANIZATION_NAME/$HF_MODEL_NAME --authorizeandb.ai/authorize
+
+export WANDB_API_KEY=TODO_get_your_wandb_key_here_wandb.ai/authorize
 export HF_USER_ACCESS_TOKEN=TODO_create_user_access_token_here_with_WRITE_permissions_https://huggingface.co/settings/token
+# note: you can avoid setting the two tokens above: in that case, the script will ask you to login to wandb and huggingface
   
-curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -  --json > speedtest.json
+curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/mawandb.ai/authorizester/speedtest.py | python -  --json > speedtest.json
 export BANDWIDTH=`python -c "import json; speedtest = json.load(open('speedtest.json')); print(int(max(1, min(speedtest['upload'], speedtest['download']) / 1e6)))"`
 echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
 ```
@@ -168,7 +170,14 @@ export HF_ORGANIZATION_NAME=CALM
 export EXP_NAME=CALM
 export WANDB_PROJECT=$EXP_NAME
 export HF_MODEL_NAME=$EXP_NAME
-export WANDB_API_KEY=TODO_get_your_wandb_key_here
+
+export WANDB_API_KEY=TODO_get_your_wandb_key_here_https://wandb.ai/authorize_OR_just_login_on_wandb
+export HF_USER_ACCESS_TOKEN=TODO_create_user_access_token_here_with_WRITE_permissions_https://huggingface.co/settings/token
+# note: you can avoid setting the two tokens above: in that case, the script will ask you to login to wandb and huggingface
+
+export INITIAL_PEERS="/ip4/34.124.232.172/tcp/12345/p2p/QmdGDSzDEi7uo8pTGG7n8s2dW12VGoPQKiDVDoQaVAo3bf /ip4/193.106.95.184/tcp/12345/p2p/QmRgdEXySu8hEB3xUxexJPxcv7M41PggRDnUTf9kStdgup"
+# ^-- If you're runnnng an indepent experiment, this must be your own initial peers. Can be either auxiliary peers or full gpu peers.
+
 
 curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -  --json > speedtest.json
 export BANDWIDTH=`python -c "import json; speedtest = json.load(open('speedtest.json')); print(int(max(1, min(speedtest['upload'], speedtest['download']) / 1e6)))"`
@@ -176,7 +185,9 @@ echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
 
 ulimit -n 16384 # this line is important, ignoring it may cause Too Many Open Files
 
-<TODO>
+python run_trainer.py --run_id $EXP_NAME --per_device_train_batch_size 1 --gradient_accumulation_steps 1 --initial_peers $INITIAL_PEERS --bandwidth $BANDWIDTH
+# you can tune per_device_train_batch_size, gradient_accumulation steps, --fp16, --gradient_checkpoints based on the device. A good rule of thumb is that the device should compute (batch size x num accumulations) gradients over 1-10 seconds. Setting very large gradient_accumulation_steps can cause your peer to miss an averaging round.
+
 ```
   
   
