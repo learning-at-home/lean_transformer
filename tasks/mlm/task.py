@@ -164,7 +164,7 @@ class MLMTrainingTask:
         If ramp-up is enabled, start with smaller sequences of initial_sequence_length tokens, then increase linearly
         to the max_sequence_length over the period of first
         """
-        current_epoch = self._collaborative_optimizer.tracker.global_epoch
+        current_epoch = self.collaborative_optimizer.tracker.global_epoch
         if self.trainer_args.sequence_length_warmup_steps == 0 or current_epoch > self.trainer_args.sequence_length_warmup_steps:
             current_sequence_length = self.trainer_args.max_sequence_length
         else:
