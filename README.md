@@ -91,8 +91,7 @@ If you have many participants are behind firewall (in --client_mode), it helps t
   
 __Minimum requirements:__ 15+ GB RAM, at least 100Mbit/s download/upload speed, at least one port opened to incoming connections;
 
-__Where to get:__ cloud providers that have cheap ingress/egress pricing. Good examples: [pebblehost](https://pebblehost.com/dedicated/) and [hetzner](https://console.hetzner.cloud/). AWS/GCP/Azure are more convenient, but they cost more due to egress pricing. Path of the true jedi: use your homelab or university server -- but that may require networking experience.
-
+__Where to get:__ cloud providers that have cheap ingress/egress pricing. Good examples: [pebblehost](https://pebblehost.com/dedicated/) "Essential-01" and [hetzner](https://www.hetzner.com/cloud) CX41. Path of the true jedi: use your homelab or university server -- but that may require networking experience. AWS/GCP/Azure has similar offers, but they cost more due to [egress pricing](https://cloud.google.com/vpc/network-pricing).
 
 
 __Setup env:__
@@ -147,15 +146,13 @@ echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
 4. Run the auxiliary peer
 ```bash
 export MY_IP=`curl --ipv4 -s http://whatismyip.akamai.com/`
-export PORT_THAT_I_OPENED=12345   # please choose a port where you can accept incoming tcp connections (or open that port if you're on a cloud)
+export PORT=12345   # please choose a port where you can accept incoming tcp connections (or open that port if you're on a cloud)
 
-export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT_THAT_I_OPENED
-export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT_THAT_I_OPENED
+export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT
+export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT
+export WANDB_START_METHOD=thread
 export CUDA_VISIBLE_DEVICES=  # do not use GPUs even if they are avilable
   
-export INITIAL_PEERS=""
-# ^-- space-separated initial peers from your experiment
-
 # organizations
 export WANDB_ENTITY=CALM
 export HF_ORGANIZATION_NAME=CALM
@@ -172,10 +169,6 @@ export HF_USER_ACCESS_TOKEN=TODO_create_user_access_token_here_with_WRITE_permis
 # activate your anaconda environment
 source ~/anaconda3/bin/activate
 
-export WANDB_START_METHOD=thread
-export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT_THAT_I_OPENED
-export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT_THAT_I_OPENED
-export CUDA_VISIBLE_DEVICES=
 
 ulimit -n 16384 # this line is important, ignoring it may cause Too Many Open Files
 
@@ -221,9 +214,9 @@ pip install -y bitsandbytes-cuda113==0.26.0
 
 ```bash
 export MY_IP=`curl --ipv4 -s http://whatismyip.akamai.com/`
-export PORT_THAT_I_OPENED=31337  # same requirements as for aux peer
-export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT_THAT_I_OPENED
-export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT_THAT_I_OPENED
+export PORT=31337  # same requirements as for aux peer
+export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT
+export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT
 export CUDA_VISIBLE_DEVICES=0  # supports multiple cuda devices!
 
 # organization & experiment name
@@ -265,5 +258,12 @@ python run_trainer.py --run_id $EXP_NAME --host_maddrs $LISTEN_ON --announce_mad
 - gradient checkpointing
 - multiple GPUs per peer
 - if aux peers have less ram, you can assign it to only parts of functionality, e.g. disable --upload_interval
+  
+Training chronicles:
+  - 2021 Nov & early Dec - collecting the data, preparing the code
+  - 2021.12.17 - took a close look at data preprocessing, found several major bugs
+  - 2021.12.19 - tested volunteer starter code
+  - 2021.12.21-22 - started three initial peers: one on GCP, Pebblehost and one backup on a family homelab of one of the participants
+  - To be continued
 </details>
 
