@@ -14,7 +14,7 @@ class CollaborativeArguments:
         metadata={"help": "Perform optimizer step after all peers collectively accumulate this many samples"},
     )
     matchmaking_time: float = field(
-        default=60.0, metadata={"help": "Averaging group will wait for stragglers for at most this many seconds"}
+        default=30.0, metadata={"help": "Averaging group will wait for stragglers for at most this many seconds"}
     )
     next_chunk_timeout: float = field(
         default=60.0, metadata={"help": "Consider allreduce peer failed if it does not respond in this many seconds"}

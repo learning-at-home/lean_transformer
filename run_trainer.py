@@ -24,7 +24,7 @@ def main():
 
     logger.info(f"Trying {len(training_peer_args.initial_peers)} initial peers: {training_peer_args.initial_peers}")
     if len(training_peer_args.initial_peers) == 0:
-        logger.warning("Please specify at least one network endpoint in initial peers.")
+        logger.warning("Specify at least one network endpoint in initial peers OR let others join your peer.")
 
     utils.setup_logging(trainer_args)
     task = MLMTrainingTask(training_peer_args, trainer_args, collab_args)
