@@ -7,7 +7,10 @@ import hivemind
 import torch.optim
 import transformers
 from hivemind import Float16Compression, SizeAdaptiveCompression, Uniform8BitQuantization
-from hivemind.optim.experimental.state_averager import LRSchedulerBase, ParamGroups
+try:
+    from hivemind.optim.experimental.state_averager import LRSchedulerBase, ParamGroups
+except ImportError:
+    from hivemind.optim.state_averager import LRSchedulerBase, ParamGroups
 from torch.optim.lr_scheduler import LambdaLR
 from transformers import AutoTokenizer
 
