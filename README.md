@@ -10,16 +10,25 @@ CALM trains a single BERT model on a dataset that combines MSA, Oscar and Arabic
 
 ## How to participate in training?
 
-To join the collaborative training, please follow these steps:
+To join the collaborative training, all you have to do is to keep a notebook running for **at least 15 minutes**, you're free to close it after that and join again in another time. There are few steps before running the notebook:
 
 1. Create an account on [Huggingface](https://huggingface.co).
 2. Join the [NCAI-CALM Organization](https://huggingface.co/CALM) on Huggingface through the invitation link shared with you by email.
+3. Get your Access Token, it's later required in the notebook
+    1. Go to your [HF account](https://huggingface.co/settings/token).
+    2. Go to Settings ⇒ Access Tokens.
+    3. Generate a new Access Token and enter any name for `what's this token for`.
+    4. Select read role.
+    5. Copy your access token.
+    6. Paste it in the notebook once it prompts you in cell number 4.
 
 ### Start training
+
+Pick one of the following methods to run the training code.<br/>
+_NOTE: Kaggle gives you around 40 hrs per week of GPU time, so it's preferred over Colab, unless you have Colab Pro or Colab Pro+._
+
 #### 1. Using Kaggle **(recommended)**
 [![Open In Kaggle](https://img.shields.io/badge/kaggle-Open%20in%20Kaggle-blue.svg)](https://www.kaggle.com/prmais/volunteer-gpu-notebook)
-
-Kaggle gives you around 40 hrs per week of GPU time, so it's preferred over Colab, unless you have Colab Pro or Colab Pro+.
 
 #### 2. Using Google Colab
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/NCAI-Research/CALM/blob/main/notebooks/volunteer-gpu-notebook.ipynb)
