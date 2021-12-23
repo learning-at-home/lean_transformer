@@ -1,27 +1,93 @@
+<img src="./assets/logo.png" width="200" alt="CALM Logo">
+
 # CALM: Collaborative Arabic Language Model
+
 The CALM project is joint effort lead by [NCAI](https://sdaia.gov.sa/ncai/?Lang=en) in collaboration with [Yandex](https://yandex.com/) and [HuggingFace](https://huggingface.co/) to train an Arabic language model with volunteers from around the globe. The project is an adaptation of the framework proposed at the NeurIPS 2021 demonstration: [Training Transformers Together](https://huggingface.co/training-transformers-together). 
 
-
-Once of the main obstacles facing many researchers in the Arabic NLP community is the lack of computing resources that are needed for training large models. Models with leading performane on Arabic NLP tasks, such as [AraBERT](https://github.com/aub-mind/arabert), [CamelBERT](https://github.com/CAMeL-Lab/CAMeLBERT), [AraELECTRA](https://huggingface.co/aubmindlab/araelectra-base-generator), and [QARiB](https://huggingface.co/qarib), took days to train on TPUs. In the spirit of democratization of AI and community enabling, a core value at NCAI, CALM aims to demonstrate the effectiveness of collaborative training and form a community of volunteers for ANLP researchers with basic level cloud GPUs who wish to train their own models collaboratively. 
+One of the main obstacles facing many researchers in the Arabic NLP community is the lack of computing resources that are needed for training large models. Models with leading performane on Arabic NLP tasks, such as [AraBERT](https://github.com/aub-mind/arabert), [CamelBERT](https://github.com/CAMeL-Lab/CAMeLBERT), [AraELECTRA](https://huggingface.co/aubmindlab/araelectra-base-generator), and [QARiB](https://huggingface.co/qarib), took days to train on TPUs. In the spirit of democratization of AI and community enabling, a core value at NCAI, CALM aims to demonstrate the effectiveness of collaborative training and form a community of volunteers for ANLP researchers with basic level cloud GPUs who wish to train their own models collaboratively. 
 
 CALM trains a single BERT model on a dataset that combines MSA, Oscar and Arabic Wikipedia, and dialectal data for the gulf region from existing open source datasets. Each volunteer GPU trains the model locally at its own pace on a portion of the dataset while another portion is being streamed in the background to reduces local memory consumption. Computing the gradients and aggregating them is performed in a distributed manner, based on the computing abilities of each participating volunteer. Details of the distributed training process are further described in the paper [Deep Learning in Open Collaborations](https://papers.nips.cc/paper/2021/hash/41a60377ba920919939d83326ebee5a1-Abstract.html).
+
+## How to participate in training?
+
+To join the collaborative training, all you have to do is to keep a notebook running for **at least 15 minutes**, you're free to close it after that and join again in another time. There are few steps before running the notebook:
+
+1. Create an account on [Huggingface](https://huggingface.co).
+2. Join the [NCAI-CALM Organization](https://huggingface.co/CALM) on Huggingface through the invitation link shared with you by email.
+3. Get your Access Token, it's later required in the notebook
+    1. Go to your [HF account](https://huggingface.co/settings/token).
+    2. Go to Settings ⇒ Access Tokens.
+    3. Generate a new Access Token and enter any name for `what's this token for`.
+    4. Select read role.
+    5. Copy your access token.
+    6. Paste it in the notebook once it prompts you in cell number 4.
+
+### Start training
+
+Pick one of the following methods to run the training code.<br/>
+_NOTE: Kaggle gives you around 40 hrs per week of GPU time, so it's preferred over Colab, unless you have Colab Pro or Colab Pro+._
+
+#### 1. Using Kaggle **(recommended)**
+[![Open In Kaggle](https://img.shields.io/badge/kaggle-Open%20in%20Kaggle-blue.svg)](https://www.kaggle.com/prmais/volunteer-gpu-notebook)
+
+#### 2. Using Google Colab
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/NCAI-Research/CALM/blob/main/notebooks/volunteer-gpu-notebook.ipynb)
+
+#### 3. Running locally
+If you have additional local computing GPUs, please visit our discord channel for instructions to set it.
+
+### Issues or questions?
+We are there to provide any assistance needed, please make sure to join our [![Open in discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/vRNN9ua2).
 
 ## How to host your own experiment?
 
 Here you can find the best practices that we learned from running the CALM experiment. These may help you set up your own collaborative experiment.
 
-If your training run is not confidential, feel free to ask for help on the [hivemind discord channel](https://discord.gg/uGugx9zYvN)
+If your training run is not confidential, feel free to ask for help on the [hivemind discord channel](https://discord.gg/vRNN9ua2)
 
 <details>
-  <summary><b> 1. Choose and verify your training configuration (TBA)</b></summary>  
-  To be updated. For now, please refer to "make your own" section of https://training-transformers-together.github.io .
+  <summary><b> 1. Choose and verify your training configuration</b></summary>  
   
-  TODO When transitioning to a new language or new dataset, it is important to check that the tokenizer/collator works as intended **before** you begin training. Here's a notebook that will help you verify that. If possible, it helps to train a small model (e.g. 6 layers, 512 hidden, 2048 ffn) locally to make sure everything works as intended.
+  Depending on you use case, you may want to change
+   - Dataset and preprocessing ([`data.py`](https://github.com/NCAI-Research/CALM/blob/main/tasks/mlm/data.py), [`data_cleaning.py`](https://github.com/NCAI-Research/CALM/blob/main/tasks/mlm/data_cleaning.py), [`whole_word_mask.py`](https://github.com/NCAI-Research/CALM/blob/main/tasks/mlm/whole_word_mask.py);
+   - Tokenizer (see [`arguments.py`](https://github.com/NCAI-Research/CALM/blob/main/arguments.py#L110-L112))
+   - Model config ([`model.json`](https://github.com/NCAI-Research/CALM/blob/main/tasks/mlm/model.json)
   
-  TODO about setting hyperparameters
   
-  TODO public training is most convenient with a HF organization. If you don't want to be public, you can run hivemind standalone as such.
-  TODO we log metrics to WANDB. If training privately, you can host wandb internally or set WANDB_DISABLED=true .
+  When transitioning to a new language or new dataset, it is important to check that the tokenizer/collator works as intended **before** you begin training.
+  The best way to do that is to manually look at training minibatches:
+  ```python
+  from tasks.mlm.data import make_training_dataset
+  from tasks.mlm.whole_word_mask import DataCollatorForWholeWordMask
+  
+  tokenizer = create_tokenizer_here(...)
+  dataset = make_training_dataset(tokenizer, max_sequence_length=...)  # see arguments.py
+  collator = DataCollatorForWholeWordMask(tokenizer, pad_to_multiple_of=...)  # see arguments.py
+  data_loader = torch.utils.data.DataLoader(dataset, collate_fn=collator, batch_size=4)
+
+  # generate a few batches
+  rows = []
+  with tqdm(enumerate(data_loader)) as progress:
+      for i, row in progress:
+          rows.append(row)
+          if i > 10:
+              break
+  
+  # look into the training data
+  row_ix, sample_ix = 0, 1
+  sources = [tokenizer.decode([i]) for i in rows[row_ix]['input_ids'][sample_ix].data.numpy()]
+  print("MASK RATE:", (rows[row_ix]['input_ids'][sample_ix] == 4).data.numpy().sum() / (rows[row_ix]['input_ids'][sample_ix] != 0).data.numpy().sum())
+
+  for i in range(len(sources)):
+      if sources[i] == '[MASK]':
+          pass#sources[i] = '[[' + tokenizer.decode(rows[row_ix]['labels'][sample_ix][i].item()) + ']]'
+
+  print(' '.join(sources))
+  ```
+  
+  If you make many changes, it also helps to train a very model using your own device to check if everything works as intended. A good initial configuration is 6 layers, 512 hidden, 2048 intermediate).
+  
+  If you're training with volunteers, the most convenient way is to set up a Hugging Face organization. For instructions on that, see "make your own" section of https://training-transformers-together.github.io . We use WANDB for tracking logs and training progress: we've set up a [WandB team](https://docs.wandb.ai/ref/app/features/teams) named [CALM](https://wandb.ai/calm) for this experiment. Alternatively, you can use hivemind standalone (and even without internet access) by setting --authorize False and WANDB_DISABLED=true -- or manually removing the corresponding options from the code.
  
 </details>
 
@@ -34,8 +100,7 @@ If you have many participants are behind firewall (in --client_mode), it helps t
   
 __Minimum requirements:__ 15+ GB RAM, at least 100Mbit/s download/upload speed, at least one port opened to incoming connections;
 
-__Where to get:__ cloud providers that have cheap ingress/egress pricing. Good examples: [pebblehost](https://pebblehost.com/dedicated/) and [hetzner](https://console.hetzner.cloud/). AWS/GCP/Azure are more convenient, but they cost more due to egress pricing. Path of the true jedi: use your homelab or university server -- but that may require networking experience.
-
+__Where to get:__ cloud providers that have cheap ingress/egress pricing. Good examples: [pebblehost](https://pebblehost.com/dedicated/) "Essential-01" and [hetzner](https://www.hetzner.com/cloud) CX41. Path of the true jedi: use your homelab or university server -- but that may require networking experience. AWS/GCP/Azure has similar offers, but they cost more due to [egress pricing](https://cloud.google.com/vpc/network-pricing).
 
 
 __Setup env:__
@@ -73,20 +138,30 @@ chmod +x p2p-keygen
 
 
 ```
-This ensures that if you restart the peer during, it will have the same identity, which is useful if others use your worker as initial peer.
+This ensures that if you restart the peer during training, it will have the same identity, which is useful if others use your worker as initial peer.
+  
+3. Measure internet bandwidth and set `$BANDWIDTH` variable
+```bash
 
-3. Set environment variables
+# You can measure bandwidth automatically:
+curl -s https://gist.githubusercontent.com/justheuristic/5467799d8f2ad59b36fa75f642cc9b87/raw/c5a4b9b66987c2115e6c54a07d97e0104dfbcd97/speedtest.py | python -  --json > speedtest.json
+export BANDWIDTH=`python -c "import json; speedtest = json.load(open('speedtest.json')); print(int(max(1, min(speedtest['upload'], speedtest['download']) / 1e6)))"`
+echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
+  
+# If that doesn't work, you can simply `export BANDWIDTH=TODOyour_bandwidth_mbits_here` using the minimum of download and upload speed.
+```
+  
+
+4. Run the auxiliary peer
 ```bash
 export MY_IP=`curl --ipv4 -s http://whatismyip.akamai.com/`
-export PORT_THAT_I_OPENED=12345   # please choose a port where you can accept incoming tcp connections (or open that port if you're on a cloud)
+export PORT=12345   # please choose a port where you can accept incoming tcp connections (or open that port if you're on a cloud)
 
-export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT_THAT_I_OPENED
-export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT_THAT_I_OPENED
+export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT
+export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT
+export WANDB_START_METHOD=thread
 export CUDA_VISIBLE_DEVICES=  # do not use GPUs even if they are avilable
   
-export INITIAL_PEERS=""
-# ^-- space-separated initial peers from your experiment
-
 # organizations
 export WANDB_ENTITY=CALM
 export HF_ORGANIZATION_NAME=CALM
@@ -100,20 +175,9 @@ export WANDB_API_KEY=TODO_get_your_wandb_key_here_wandb.ai/authorize
 export HF_USER_ACCESS_TOKEN=TODO_create_user_access_token_here_with_WRITE_permissions_https://huggingface.co/settings/token
 # note: you can avoid setting the two tokens above: in that case, the script will ask you to login to wandb and huggingface
   
-curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/mawandb.ai/authorizester/speedtest.py | python -  --json > speedtest.json
-export BANDWIDTH=`python -c "import json; speedtest = json.load(open('speedtest.json')); print(int(max(1, min(speedtest['upload'], speedtest['download']) / 1e6)))"`
-echo "Internet Bandwidth (Mb/s) = $BANDWIDTH"
-```
-
- __Actually run it:__
-```bash
 # activate your anaconda environment
 source ~/anaconda3/bin/activate
 
-export WANDB_START_METHOD=thread
-export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT_THAT_I_OPENED
-export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT_THAT_I_OPENED
-export CUDA_VISIBLE_DEVICES=
 
 ulimit -n 16384 # this line is important, ignoring it may cause Too Many Open Files
 
@@ -159,9 +223,9 @@ pip install -y bitsandbytes-cuda113==0.26.0
 
 ```bash
 export MY_IP=`curl --ipv4 -s http://whatismyip.akamai.com/`
-export PORT_THAT_I_OPENED=31337  # same requirements as for aux peer
-export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT_THAT_I_OPENED
-export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT_THAT_I_OPENED
+export PORT=31337  # same requirements as for aux peer
+export LISTEN_ON=/ip4/0.0.0.0/tcp/$PORT
+export ANNOUNCE_ON=/ip4/$MY_IP/tcp/$PORT
 export CUDA_VISIBLE_DEVICES=0  # supports multiple cuda devices!
 
 # organization & experiment name
@@ -202,5 +266,13 @@ python run_trainer.py --run_id $EXP_NAME --host_maddrs $LISTEN_ON --announce_mad
 - client-to-averager ratio
 - gradient checkpointing
 - multiple GPUs per peer
+- if aux peers have less ram, you can assign it to only parts of functionality, e.g. disable --upload_interval
+  
+Training chronicles:
+  - 2021 Nov & early Dec - collecting the data, preparing the code
+  - 2021.12.17 - took a close look at data preprocessing, found several major bugs
+  - 2021.12.19 - tested volunteer starter code
+  - 2021.12.21-22 - started three initial peers: one on GCP, Pebblehost and one backup on a family homelab of one of the participants
+  - To be continued
 </details>
 
