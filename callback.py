@@ -46,6 +46,8 @@ class CollaborativeCallback(transformers.TrainerCallback):
     def on_step_end(
         self, args: TrainingArguments, state: transformers.TrainerState, control: transformers.TrainerControl, **kwargs
     ):
+        self.task.update_sequence_length()
+
         control.should_log = True
         if not self.params_are_finite():
             if not os.path.exists(self.state_path):
