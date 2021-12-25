@@ -9,8 +9,7 @@ from transformers import HfArgumentParser
 
 import callback
 import utils
-from arguments import (CollaborativeArguments, HFTrainerArguments,
-                       TrainingPeerArguments)
+from arguments import CollaborativeArguments, HFTrainerArguments, TrainingPeerArguments
 from lib.training.hf_trainer import CollaborativeHFTrainer
 from tasks.mlm.task import MLMTrainingTask
 
