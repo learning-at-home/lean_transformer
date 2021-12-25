@@ -1,16 +1,14 @@
 import random
 from collections import defaultdict
+from functools import partial
+from typing import Optional
 
 import torch.utils.data
+from datasets import IterableDataset, interleave_datasets
+from hivemind.utils.logging import get_logger
 from razdel import sentenize
 
-from typing import Optional
-from functools import partial
-from datasets import interleave_datasets, IterableDataset
-
-from hivemind.utils.logging import get_logger
 from lib.training.yt_streaming import YTDataset
-
 
 logger = get_logger(__name__)
 
@@ -20,7 +18,7 @@ def make_training_dataset(
     shuffle_buffer_size: int = 10 ** 4,
     shuffle_seed: Optional[int] = None,
     preprocessing_batch_size: int = 256,
-    max_sequence_length: int = 512
+    max_sequence_length: int = 512,
 ):
     runet = YTDataset("hahn", "//home/yr/nlp/big_russian_bert/common_mincount1_nolimit_nodedup")
     wiki = YTDataset("hahn", "//home/yr/nlp/big_russian_bert/wikipedia")
@@ -32,19 +30,31 @@ def make_training_dataset(
     colnames = dict(runet=b"data", wiki=b"Text", taiga=b"text", librusec=b"text")
 
     def extract_training_columns(key, batch):
-        texts = [bytes.decode(row, errors='ignore') for row in batch[colnames[key]]]
+        texts = [bytes.decode(row, errors="ignore") for row in batch[colnames[key]]]
         return dict(text=texts, key=[key] * len(texts))
 
     datasets = {key: IterableDataset(dataset) for key, dataset in datasets.items()}
-    datasets = {key: dataset.map(partial(extract_training_columns, key),
-                                 batched=True, batch_size=preprocessing_batch_size)
-                for key, dataset in datasets.items()}
-    datasets = {key: dataset.map(partial(tokenize_function, tokenizer, max_sequence_length=max_sequence_length),
-                                 batched=True, batch_size=preprocessing_batch_size)
-                for key, dataset in datasets.items()}
+    datasets = {
+        key: dataset.map(
+            partial(extract_training_columns, key),
+            batched=True,
+            batch_size=preprocessing_batch_size,
+        )
+        for key, dataset in datasets.items()
+    }
+    datasets = {
+        key: dataset.map(
+            partial(tokenize_function, tokenizer, max_sequence_length=max_sequence_length),
+            batched=True,
+            batch_size=preprocessing_batch_size,
+        )
+        for key, dataset in datasets.items()
+    }
 
-    dataset = interleave_datasets([datasets[k] for k in sorted(datasets.keys())],
-                                  probabilities=[weights[k] for k in sorted(datasets.keys())])
+    dataset = interleave_datasets(
+        [datasets[k] for k in sorted(datasets.keys())],
+        probabilities=[weights[k] for k in sorted(datasets.keys())],
+    )
 
     dataset = dataset.shuffle(shuffle_buffer_size, seed=shuffle_seed)
     dataset = dataset.with_format("torch")
@@ -97,7 +107,7 @@ def create_instances_from_document(tokenizer, document, max_sequence_length):
                 instance = tokenizer(
                     " ".join(tokens_a),
                     " ".join(tokens_b),
-                    padding='max_length',
+                    padding="max_length",
                     truncation="longest_first",
                     max_length=max_sequence_length,
                     # We use this option because DataCollatorForLanguageModeling
