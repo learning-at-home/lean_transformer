@@ -19,9 +19,14 @@ import torch.nn as nn
 from transformers.file_utils import add_start_docstrings
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.albert.modeling_albert import (
-    ALBERT_START_DOCSTRING, AlbertForPreTraining,
-    AlbertForSequenceClassification, AlbertForTokenClassification,
-    AlbertMLMHead, AlbertModel, AlbertSOPHead)
+    ALBERT_START_DOCSTRING,
+    AlbertForPreTraining,
+    AlbertForSequenceClassification,
+    AlbertForTokenClassification,
+    AlbertMLMHead,
+    AlbertModel,
+    AlbertSOPHead,
+)
 from transformers.utils import logging
 
 from lib.models.transformer import LeanTransformer, LeanTransformerConfig
