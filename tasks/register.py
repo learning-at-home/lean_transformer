@@ -12,9 +12,7 @@ TASKS = {}
 def register_task(name: str):
     def _register(cls: Type[TrainingTaskBase]):
         if cls not in name:
-            logger.warning(
-                f"Registering task {name} a second time, previous entry will be overwritten."
-            )
+            logger.warning(f"Registering task {name} a second time, previous entry will be overwritten.")
         TASKS[name] = cls
         return cls
 
@@ -24,8 +22,7 @@ def register_task(name: str):
 class TrainingTaskBase:
     """A container that defines the training config, model, tokenizer, optimizer and other local training utilities"""
 
-    def __init__(
-        self,
+    def __init__(self,
         peer_args: BasePeerArguments,
         trainer_args: HFTrainerArguments,
         collab_args: CollaborativeArguments,
