@@ -31,7 +31,11 @@ class CollaborativeCallback(transformers.TrainerCallback):
         self.state_path = args.state_path
 
     def on_train_begin(
-        self, args: TrainingArguments, state: transformers.TrainerState, control: transformers.TrainerControl, **kwargs
+        self,
+        args: TrainingArguments,
+        state: transformers.TrainerState,
+        control: transformers.TrainerControl,
+        **kwargs,
     ):
         if os.path.isfile(self.state_path):
             self.restore_from_backup(self.state_path)
@@ -44,9 +48,13 @@ class CollaborativeCallback(transformers.TrainerCallback):
             self.restore_from_backup(self.state_path, check_epoch=True)
 
     def on_step_end(
-        self, args: TrainingArguments, state: transformers.TrainerState, control: transformers.TrainerControl, **kwargs
+        self,
+        args: TrainingArguments,
+        state: transformers.TrainerState,
+        control: transformers.TrainerControl,
+        **kwargs,
     ):
-        self.task.update_sequence_length()
+        self.task.on_step_end()
 
         control.should_log = True
         if not self.params_are_finite():
