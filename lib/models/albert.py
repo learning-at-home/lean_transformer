@@ -31,6 +31,7 @@ from transformers.models.albert.modeling_albert import (
 from transformers.utils import logging
 
 from lib.models.transformer import LeanTransformer, LeanTransformerConfig
+from lib.modules.sequence import SequentialWithKwargs
 
 logger = logging.get_logger(__name__)
 
@@ -147,11 +148,7 @@ class LeanAlbertModel(AlbertModel):
         output_hidden_states=None,
         return_dict=None,
     ):
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        assert not output_attentions and not output_hidden_states, "extra outputs are not supported"
+        assert head_mask is None and output_attentions is None and output_hidden_states is None, "not implemented"
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if input_ids is not None and inputs_embeds is not None:
@@ -179,17 +176,11 @@ class LeanAlbertModel(AlbertModel):
         extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
         extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
-        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
 
         embedding_output = self.embeddings(
             input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         )
-        encoder_outputs = self.encoder(
-            embedding_output,
-            extended_attention_mask,
-            head_mask=head_mask,
-            return_dict=return_dict,
-        )
+        encoder_outputs = self.encoder(embedding_output, extended_attention_mask)
 
         sequence_output = encoder_outputs[0]
 
@@ -210,7 +201,7 @@ class GradientCheckpointingMixin:
     supports_gradient_checkpointing = True
 
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
-        if isinstance(module, LeanTransformer):
+        if isinstance(module, SequentialWithKwargs):
             module.gradient_checkpointing = value
 
 

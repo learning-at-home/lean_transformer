@@ -3,7 +3,6 @@ from functools import lru_cache
 from typing import Optional
 
 from torch import nn
-from torch.utils.checkpoint import checkpoint
 from transformers import PretrainedConfig
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutput
@@ -11,6 +10,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from lib.modules import LeanFFN, LeanSelfAttention
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import AdaptedLinear, SharedLinear, SharedMatrix
+from lib.modules.sequence import SequentialWithKwargs, ActiveKwargs
 
 
 class LeanTransformerConfig(PretrainedConfig):
@@ -61,7 +61,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.layer_norm_eps = layer_norm_eps
         self.hidden_act_gated = hidden_act_gated
         self.sandwich_norm = sandwich_norm
-        self.reversibl = reversible
+        self.reversible = reversible
 
         if position_embedding_type == "absolute":
             assert max_position_embeddings is not None
@@ -149,30 +149,6 @@ class LeanTransformerLayer(nn.Module):
         assert config.chunk_size_feed_forward == 0, "chunking is not supported"
         self.seq_len_dim = 1
 
-        self.attention = LeanSelfAttention(
-            config.hidden_size,
-            config.num_attention_heads,
-            attention_core=config.get_attention_core(),
-            hidden_dropout_prob=config.hidden_dropout_prob,
-            layer_norm_eps=config.layer_norm_eps,
-            dense_qkv=config.get_linear_layer("self_attn_qkv", config.hidden_size, config.hidden_size * 3, bias=True),
-            dense_out=config.get_linear_layer("self_attn_out", config.hidden_size, config.hidden_size, bias=True),
-            sandwich_norm=config.sandwich_norm,
-        )
-
-        self.ffn = LeanFFN(
-            config.hidden_size,
-            config.intermediate_size,
-            activation=ACT2FN[config.hidden_act],
-            gated=config.hidden_act_gated,
-            layer_norm_eps=config.layer_norm_eps,
-            dropout=config.hidden_dropout_prob,
-            dense_i2h=config.get_linear_layer(
-                "ffn_first", config.hidden_size, config.intermediate_size * (1 + config.hidden_act_gated), bias=True,
-            ),
-            dense_h2o=config.get_linear_layer("ffn_second", config.intermediate_size, config.hidden_size, bias=True),
-            sandwich_norm=config.sandwich_norm,
-        )
 
     def forward(self, hidden_states, attention_mask=None, output_attentions=False):
         attention_output, *extras = self.attention(hidden_states, attention_mask, output_attentions)
@@ -185,42 +161,64 @@ class LeanTransformer(nn.Module):
         super().__init__()
         self.config = config
         self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
-        self.layer_groups = nn.ModuleList(
-            [
-                nn.ModuleDict(
-                    dict(
-                        layers=nn.ModuleList([LeanTransformerLayer(config) for _ in range(config.num_inner_groups)])(
-                            config
-                        )
-                    )
-                )
-                for _ in range(config.num_hidden_groups)
-            ]
-        )
+        self.layer_groups = nn.ModuleList([nn.ModuleDict(dict(layers=nn.ModuleList([nn.ModuleDict(dict(
+                attention=self._make_attention(config), ffn=self._make_ffn(config)
+        )) for _ in range(config.num_inner_groups)]))) for _ in range(config.num_hidden_groups)])
         self.post_layer_norm = nn.LayerNorm(config.hidden_size, config.layer_norm_eps)
-        self.gradient_checkpointing = False
 
-    def forward(
-        self,
-        hidden_states,
-        attention_mask=None,
-        return_dict=True,
-    ):
-        hidden_states = self.embedding_hidden_mapping_in(hidden_states)
-        maybe_checkpoint = checkpoint if self.gradient_checkpointing else lambda func, *args: func(*args)
-
+        sequence = []
         for i in range(self.config.num_hidden_layers):
-            # Index of the hidden group
             group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
+            for layer in self.layer_groups[group_idx].layers:
+                sequence.append(ActiveKwargs(layer.attention, ("attention_mask",)))
+                sequence.append(ActiveKwargs(layer.ffn))
+        self.sequence = SequentialWithKwargs(*sequence)
 
-            layer_group_output = maybe_checkpoint(
-                self.layer_groups[group_idx],
-                hidden_states,
-                attention_mask,
-            )
-            hidden_states = layer_group_output[0]
+    def _make_attention(self, config: LeanTransformerConfig):
+        return LeanSelfAttention(
+            config.hidden_size,
+            config.num_attention_heads,
+            attention_core=config.get_attention_core(),
+            hidden_dropout_prob=config.hidden_dropout_prob,
+            layer_norm_eps=config.layer_norm_eps,
+            dense_qkv=config.get_linear_layer("self_attn_qkv", config.hidden_size, config.hidden_size * 3, bias=True),
+            dense_out=config.get_linear_layer("self_attn_out", config.hidden_size, config.hidden_size, bias=True),
+            sandwich_norm=config.sandwich_norm,
+            residual=not config.reversible,
+        )
 
-        if not return_dict:
-            return hidden_states
+    def _make_ffn(self, config: LeanTransformerConfig):
+        return LeanFFN(
+            config.hidden_size,
+            config.intermediate_size,
+            activation=ACT2FN[config.hidden_act],
+            gated=config.hidden_act_gated,
+            layer_norm_eps=config.layer_norm_eps,
+            dropout=config.hidden_dropout_prob,
+            dense_i2h=config.get_linear_layer(
+                "ffn_first", config.hidden_size, config.intermediate_size * (1 + config.hidden_act_gated), bias=True,
+            ),
+            dense_h2o=config.get_linear_layer("ffn_second", config.intermediate_size, config.hidden_size, bias=True),
+            sandwich_norm=config.sandwich_norm,
+            residual=not config.reversible,
+        )
 
-        return BaseModelOutput(last_hidden_state=self.post_layer_norm(hidden_states))
+    def forward(self, hidden_states, attention_mask=None):
+        hidden_states = self.embedding_hidden_mapping_in(hidden_states)
+        hidden_states = self.sequence(hidden_states, attention_mask=attention_mask)
+        return BaseModelOutput(self.post_layer_norm(hidden_states))
+
+
+class SequentialWrapper(nn.Module):
+    """Adapts a self-attention or ffn module to be a part of torch.nn.Sequential"""
+
+    def __init__(self, module: nn.Module, active_kwargs=(), undo_residual: bool = False):
+        super().__init__()
+        self.module, self.active_kwargs, self.undo_residual = module, active_kwargs, undo_residual
+
+    def forward(self, input, **kwargs):
+        active_kwargs = {key: value for key, value in kwargs.items() if key in self.active_kwargs}
+        output = self.module(input, **active_kwargs)
+        if self.undo_residual:
+            output = output - input
+        return output, kwargs

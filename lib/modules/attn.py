@@ -19,6 +19,7 @@ class LeanSelfAttention(nn.Module):
         sandwich_norm: bool = False,
         dense_qkv: Optional[nn.Linear] = None,
         dense_out: Optional[nn.Linear] = None,
+        residual: bool = True,
         **kwargs,
     ):
         """Attention layer that does not hog GPU memory"""
@@ -38,6 +39,7 @@ class LeanSelfAttention(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.sandwich_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if sandwich_norm else None
         self.output_dropout = nn.Dropout(hidden_dropout_prob, inplace=False)
+        self.residual = residual
 
     def forward(self, hidden_states, attention_mask=None, output_attentions=False):
         hidden_states_ln = self.layer_norm(hidden_states)
@@ -46,11 +48,12 @@ class LeanSelfAttention(nn.Module):
         attention_output, attention_probs = self._maybe_checkpoint(
             self.attention_core, query, key, value, attention_mask
         )
-        projected_context_layer = self.dense_out(attention_output)
+        outputs = self.dense_out(attention_output)
         if self.sandwich_norm:
-            projected_context_layer = self.sandwich_norm(projected_context_layer)
-        projected_context_layer_dropout = self.output_dropout(projected_context_layer)
-        outputs = projected_context_layer_dropout + hidden_states.to(torch.float32, copy=False)
+            outputs = self.sandwich_norm(outputs)
+        outputs = self.output_dropout(outputs)
+        if self.residual:
+            outputs = outputs + hidden_states.to(torch.float32, copy=False)
         return (outputs, attention_probs) if output_attentions else (outputs,)
 
     def _maybe_checkpoint(self, func, *args):
