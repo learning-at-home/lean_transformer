@@ -1,10 +1,9 @@
-import random
 import logging
-from typing import Optional, Any
+import random
+from typing import Any, Optional
 
 import torch.utils.data
 from ytreader import YTTableParallelReader
-
 
 logger = logging.getLogger(__name__)
 
@@ -12,17 +11,32 @@ logger = logging.getLogger(__name__)
 class YTDataset(torch.utils.data.IterableDataset):
     """Reads dataset in chunks from internal yandex database. Assumes that data is already shuffled."""
 
-    def __init__(self, cluster: str, table: str, chunk_size: int = 10 ** 4, cache_size: int = 10 ** 3,
-                 num_readers: int = 4, max_consecutive_errors: int = 10, seed: Optional[Any] = None, cycle: bool = True
-                 ):
+    def __init__(
+        self,
+        cluster: str,
+        table: str,
+        chunk_size: int = 10 ** 4,
+        cache_size: int = 10 ** 3,
+        num_readers: int = 4,
+        max_consecutive_errors: int = 10,
+        seed: Optional[Any] = None,
+        cycle: bool = True,
+    ):
         self.cluster, self.table = cluster, table
         self.chunk_size, self.num_readers, self.cache_size = chunk_size, num_readers, cache_size
         self.random_state, self.cycle = random.Random(seed), cycle
         self.max_consecutive_errors = max_consecutive_errors
 
     def shuffle_data_sources(self, seed: int):
-        return YTDataset(self.cluster, self.table, self.chunk_size, self.num_readers, self.cache_size,
-                         seed=seed, cycle=self.cycle)
+        return YTDataset(
+            self.cluster,
+            self.table,
+            self.chunk_size,
+            self.num_readers,
+            self.cache_size,
+            seed=seed,
+            cycle=self.cycle,
+        )
 
     def __iter__(self):
         started = False
