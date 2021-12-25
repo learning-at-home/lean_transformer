@@ -240,4 +240,4 @@ class _LeanFFN(torch.autograd.Function):
         return (grad_input, grad_ln_weight, grad_ln_bias,
                 grad_i2h_weight, grad_i2h_bias, grad_i2h_adapter_first, grad_i2h_adapter_second,
                 grad_h2o_weight, grad_h2o_bias, grad_h2o_adapter_first, grad_h2o_adapter_second,
-                grad_sandwich_ln_weight, grad_sandwich_ln_bias, None, None, None, None)
+                grad_sandwich_ln_weight, grad_sandwich_ln_bias, None, None, None, None, None)
