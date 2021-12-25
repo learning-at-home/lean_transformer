@@ -8,8 +8,7 @@ from hivemind.utils.logging import get_logger, use_hivemind_log_handler
 from transformers import HfArgumentParser
 
 import utils
-from arguments import (CollaborativeArguments, TPUTrainerArguments,
-                       TrainingPeerArguments)
+from arguments import CollaborativeArguments, TPUTrainerArguments, TrainingPeerArguments
 from callback import CollaborativeCallback
 from lib.training.tpu import TPUManager
 from tasks.mlm.task import MLMTrainingTask
