@@ -14,20 +14,25 @@ class CollaborativeArguments:
         metadata={"help": "Perform optimizer step after all peers collectively accumulate this many samples"},
     )
     matchmaking_time: float = field(
-        default=60.0, metadata={"help": "Averaging group will wait for stragglers for at most this many seconds"}
+        default=60.0,
+        metadata={"help": "Averaging group will wait for stragglers for at most this many seconds"},
     )
     next_chunk_timeout: float = field(
-        default=30.0, metadata={"help": "Consider allreduce peer failed if it does not respond in this many seconds"}
+        default=30.0,
+        metadata={"help": "Consider allreduce peer failed if it does not respond in this many seconds"},
     )
     averaging_timeout: float = field(
-        default=300.0, metadata={"help": "Give up on averaging step after this many seconds"}
+        default=300.0,
+        metadata={"help": "Give up on averaging step after this many seconds"},
     )
     offload_optimizer: bool = field(default=True, metadata={"help": "Whether or not to offload optimizer into RAM"})
     delay_optimizer_step: bool = field(
-        default=True, metadata={"help": "Whether or not to run optimizer step in background"}
+        default=True,
+        metadata={"help": "Whether or not to run optimizer step in background"},
     )
     delay_grad_averaging: bool = field(
-        default=True, metadata={"help": "Whether or not to run gradient averaging in background"}
+        default=True,
+        metadata={"help": "Whether or not to run gradient averaging in background"},
     )
     average_state_every: int = field(default=5, metadata={"help": "Average parameters every this many epochs"})
     reuse_grad_buffers: bool = field(
@@ -104,12 +109,8 @@ class BasePeerArguments:
     """Base arguments that are used for both trainers and for auxiliary peers such as training monitor"""
 
     run_id: str = field(metadata={"help": "A unique experiment name, used as prefix for all DHT keys"})
-    model_config_path: Optional[str] = field(
-        default="./model.json", metadata={"help": "Path to the model config"}
-    )
-    tokenizer_path: Optional[str] = field(
-        default="./tokenizer", metadata={"help": "Path to the tokenizer"}
-    )
+    model_config_path: Optional[str] = field(default="./model.json", metadata={"help": "Path to the model config"})
+    tokenizer_path: Optional[str] = field(default="./tokenizer", metadata={"help": "Path to the tokenizer"})
     cache_dir: Optional[str] = field(default="./cache", metadata={"help": "Path to the cache"})
     authorize: bool = field(default=False, metadata={"help": "Whether or not to use HF authorizer"})
     client_mode: bool = field(
@@ -158,7 +159,8 @@ class BasePeerArguments:
 @dataclass
 class TrainingPeerArguments(BasePeerArguments):
     statistics_expiration: float = field(
-        default=600, metadata={"help": "Statistics will be removed if not updated in this many seconds"}
+        default=600,
+        metadata={"help": "Statistics will be removed if not updated in this many seconds"},
     )
     backup_every_epochs: Optional[int] = field(
         default=None,
@@ -168,7 +170,8 @@ class TrainingPeerArguments(BasePeerArguments):
         },
     )
     state_path: str = field(
-        default="state.zip", metadata={"help": "Load this state upon init and when recovering from NaN parameters"}
+        default="state.zip",
+        metadata={"help": "Load this state upon init and when recovering from NaN parameters"},
     )
 
 
@@ -179,24 +182,36 @@ class AuxiliaryPeerArguments(BasePeerArguments):
     learning curves, assisting in all-reduce and uploading checkpoints to the hub
     """
 
-    refresh_period: float = field(default=10, metadata={"help": "Period (in seconds) for fetching the keys from DHT"})
+    refresh_period: float = field(
+        default=10,
+        metadata={"help": "Period (in seconds) for fetching the keys from DHT"},
+    )
     wandb_project: Optional[str] = field(
-        default=None, metadata={"help": "Name of Weights & Biases project to report the training progress to"}
+        default=None,
+        metadata={"help": "Name of Weights & Biases project to report the training progress to"},
     )
     save_checkpoint_epoch_interval: int = field(
-        default=5, metadata={"help": "Frequency (in steps) of fetching and saving state from peers"}
+        default=5,
+        metadata={"help": "Frequency (in steps) of fetching and saving state from peers"},
     )
     repo_url: Optional[str] = field(
-        default=None, metadata={"help": "URL of Hugging Face Hub repository to upload the model and optimizer states"}
+        default=None,
+        metadata={"help": "URL of Hugging Face Hub repository to upload the model and optimizer states"},
     )
     local_path: Optional[str] = field(
-        default="Repo", metadata={"help": "Path to local repository to store the model and optimizer states"}
+        default="Repo",
+        metadata={"help": "Path to local repository to store the model and optimizer states"},
     )
     upload_interval: Optional[float] = field(
-        default=None, metadata={"help": "Frequency (in seconds) of uploading the model to Hub"}
+        default=None,
+        metadata={"help": "Frequency (in seconds) of uploading the model to Hub"},
     )
     store_checkpoints: bool = field(default=True, metadata={"help": "If True, enables CheckpointHandler"})
     assist_in_averaging: bool = field(
-        default=False, metadata={"help": "If True, this peer will facilitate averaging for other (training) peers"}
+        default=False,
+        metadata={"help": "If True, this peer will facilitate averaging for other (training) peers"},
     )
-    assist_refresh: float = field(default=1.0, metadata={"help": "Period (in seconds) for tryin to assist averaging"})
+    assist_refresh: float = field(
+        default=1.0,
+        metadata={"help": "Period (in seconds) for tryin to assist averaging"},
+    )
