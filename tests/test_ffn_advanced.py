@@ -28,6 +28,7 @@ class ReferenceFFN(nn.Module):
         sandwich_norm: bool = False,
         dense_i2h: Optional[nn.Linear] = None,
         dense_h2o: Optional[nn.Linear] = None,
+        residual: bool = True
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
@@ -39,6 +40,7 @@ class ReferenceFFN(nn.Module):
         self.sandwich_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if sandwich_norm else None
         self.activation = activation
         self.dropout = dropout
+        self.residual = residual
 
     def forward(self, input):
         i2h_adapter_first = i2h_adapter_second = h2o_adapter_first = h2o_adapter_second = None
@@ -62,7 +64,8 @@ class ReferenceFFN(nn.Module):
         if self.sandwich_norm:
             out = self.sandwich_norm(out)
         out = F.dropout(out, self.dropout, self.training)
-        out = out.add(input_2d)
+        if self.residual:
+            out = out.add(input_2d)
         return out.view(*input.shape)
 
     @staticmethod
