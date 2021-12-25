@@ -151,14 +151,19 @@ class LeanTransformer(nn.Module):
                 attention=self._make_attention(config), ffn=self._make_ffn(config)
         )) for _ in range(config.num_inner_groups)]))) for _ in range(config.num_hidden_groups)])
         self.post_layer_norm = nn.LayerNorm(config.hidden_size, config.layer_norm_eps)
+        self._sequential: Optional[nn.Module] = None
 
-        sequence = []
-        for i in range(self.config.num_hidden_layers):
-            group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
-            for layer in self.layer_groups[group_idx].layers:
-                sequence.append(ActiveKwargs(layer.attention, ("attention_mask",)))
-                sequence.append(ActiveKwargs(layer.ffn))
-        self.sequence = SequentialWithKwargs(*sequence)
+    def _get_sequential(self):
+        if self._sequential is None:
+            sequence = []
+            for i in range(self.config.num_hidden_layers):
+                group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
+                for layer in self.layer_groups[group_idx].layers:
+                    sequence.append(ActiveKwargs(layer.attention, ("attention_mask",)))
+                    sequence.append(ActiveKwargs(layer.ffn))
+            sequential = ReversibleSequence(*sequence) if self.config.reversible else SequentialWithKwargs
+            self._sequential = lambda: sequential
+        return self._sequential()
 
     def _make_attention(self, config: LeanTransformerConfig):
         return LeanSelfAttention(
@@ -191,7 +196,7 @@ class LeanTransformer(nn.Module):
 
     def forward(self, hidden_states, attention_mask=None):
         hidden_states = self.embedding_hidden_mapping_in(hidden_states)
-        hidden_states = self.sequence(hidden_states, attention_mask=attention_mask)
+        hidden_states = self._get_sequential()(hidden_states, attention_mask=attention_mask)
         return BaseModelOutput(self.post_layer_norm(hidden_states))
 
 
