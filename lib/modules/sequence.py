@@ -12,7 +12,8 @@ class ActiveKwargs(nn.Module):
 
     def forward(self, input, **kwargs):
         active_kwargs = {key: value for key, value in kwargs.items() if key in self.active_kwargs}
-        return self.module(input, **active_kwargs)
+        output = self.module(input, **active_kwargs)
+        return (output,) if isinstance(output, torch.Tensor) else output
 
 
 class SequentialWithKwargs(nn.Sequential):
