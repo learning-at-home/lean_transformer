@@ -33,6 +33,7 @@ class LeanTransformerConfig(PretrainedConfig):
         hidden_act: str = "gelu_new",
         hidden_act_gated: bool = False,
         sandwich_norm: bool = False,
+        reversible: bool = False,
         hidden_dropout_prob: float = 0,
         attention_probs_dropout_prob: float = 0,
         layer_norm_eps: float = 1e-12,
@@ -60,6 +61,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.layer_norm_eps = layer_norm_eps
         self.hidden_act_gated = hidden_act_gated
         self.sandwich_norm = sandwich_norm
+        self.reversibl = reversible
 
         if position_embedding_type == "absolute":
             assert max_position_embeddings is not None
@@ -166,7 +168,7 @@ class LeanTransformerLayer(nn.Module):
             layer_norm_eps=config.layer_norm_eps,
             dropout=config.hidden_dropout_prob,
             dense_i2h=config.get_linear_layer(
-                "ffn_first", config.hidden_size, config.intermediate_size * (1 + config.hidden_act_gated), bias=True
+                "ffn_first", config.hidden_size, config.intermediate_size * (1 + config.hidden_act_gated), bias=True,
             ),
             dense_h2o=config.get_linear_layer("ffn_second", config.intermediate_size, config.hidden_size, bias=True),
             sandwich_norm=config.sandwich_norm,
@@ -178,44 +180,23 @@ class LeanTransformerLayer(nn.Module):
         return (ffn_output, attention_output, *extras)
 
 
-class LeanTransformerLayerGroup(nn.Module):
-    def __init__(self, config: LeanTransformerConfig):
-        nn.Module.__init__(self)
-        self.layers = nn.ModuleList([LeanTransformerLayer(config) for _ in range(config.num_inner_groups)])
-
-    def forward(
-        self, hidden_states, attention_mask=None, head_mask=None, output_attentions=False, output_hidden_states=False
-    ):
-        if head_mask is not None and any(head_mask):
-            raise NotImplementedError(f"head mask was provided, but it is not supported")
-
-        layer_hidden_states = ()
-        layer_attentions = ()
-
-        for layer_index, layer in enumerate(self.layers):
-            layer_output = layer(hidden_states, attention_mask, output_attentions)
-            hidden_states = layer_output[0]
-
-            if output_attentions:
-                layer_attentions = layer_attentions + (layer_output[1],)
-
-            if output_hidden_states:
-                layer_hidden_states = layer_hidden_states + (hidden_states,)
-
-        outputs = (hidden_states,)
-        if output_hidden_states:
-            outputs = outputs + (layer_hidden_states,)
-        if output_attentions:
-            outputs = outputs + (layer_attentions,)
-        return outputs  # last-layer hidden state, (layer hidden states), (layer attentions)
-
-
 class LeanTransformer(nn.Module):
     def __init__(self, config: LeanTransformerConfig):
         super().__init__()
         self.config = config
         self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
-        self.layer_groups = nn.ModuleList([LeanTransformerLayerGroup(config) for _ in range(config.num_hidden_groups)])
+        self.layer_groups = nn.ModuleList(
+            [
+                nn.ModuleDict(
+                    dict(
+                        layers=nn.ModuleList([LeanTransformerLayer(config) for _ in range(config.num_inner_groups)])(
+                            config
+                        )
+                    )
+                )
+                for _ in range(config.num_hidden_groups)
+            ]
+        )
         self.post_layer_norm = nn.LayerNorm(config.hidden_size, config.layer_norm_eps)
         self.gradient_checkpointing = False
 
