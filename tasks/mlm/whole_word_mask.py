@@ -4,10 +4,12 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 from transformers import DataCollatorForLanguageModeling
+
 try:
-    from transformers.data.data_collator import _torch_collate_batch, tolist
+    from transformers.data.data_collator import _torch_collate_batch as collate_batch, tolist
 except ImportError:
-    from transformers.data.data_collator import _collate_batch as _torch_collate_batch, tolist
+    from transformers.data.data_collator import _collate_batch as collate_batch, tolist
+
 from transformers.tokenization_utils_base import BatchEncoding
 
 
@@ -16,11 +18,7 @@ def _is_start_piece_sp(piece):
     special_pieces = set(list('!"#$%&"()*+,-./:;?@[\\]^_`{|}~'))
     special_pieces.add(u"€".encode("utf-8"))
     special_pieces.add(u"£".encode("utf-8"))
-    if (
-        piece.startswith("▁")
-        or piece.startswith("<")
-        or piece in special_pieces
-    ):
+    if piece.startswith("▁") or piece.startswith("<") or piece in special_pieces:
         return True
     else:
         return False
@@ -46,9 +44,13 @@ class DataCollatorForWholeWordMask(DataCollatorForLanguageModeling):
         self, examples: List[Union[List[int], torch.Tensor, Dict[str, torch.Tensor]]]
     ) -> Dict[str, torch.Tensor]:
         if isinstance(examples[0], (dict, BatchEncoding)):
-            batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of)
+            batch = self.tokenizer.pad(
+                examples,
+                return_tensors="pt",
+                pad_to_multiple_of=self.pad_to_multiple_of,
+            )
         else:
-            batch = {"input_ids": _torch_collate_batch(examples, self.tokenizer, pad_to_multiple_of=self.pad_to_multiple_of)}
+            batch = {"input_ids": collate_batch(examples, self.tokenizer, pad_to_multiple_of=self.pad_to_multiple_of)}
 
         # If special token mask has been preprocessed, pop it from the dict.
         special_tokens_mask = batch.pop("special_tokens_mask", None)
@@ -57,7 +59,7 @@ class DataCollatorForWholeWordMask(DataCollatorForLanguageModeling):
         for example in batch["input_ids"]:
             ref_tokens = self.tokenizer.convert_ids_to_tokens(tolist(example))
             mask_labels.append(self._whole_word_mask(ref_tokens))
-        batch_mask = _torch_collate_batch(mask_labels, self.tokenizer, pad_to_multiple_of=self.pad_to_multiple_of)
+        batch_mask = collate_batch(mask_labels, self.tokenizer, pad_to_multiple_of=self.pad_to_multiple_of)
 
         batch["input_ids"], batch["labels"] = self.mask_tokens(
             batch["input_ids"], batch_mask, special_tokens_mask=special_tokens_mask
@@ -72,7 +74,11 @@ class DataCollatorForWholeWordMask(DataCollatorForLanguageModeling):
         cand_indexes = []
         num_tokens_exc_pad = 0
         for i, token in enumerate(input_tokens):
-            if token in (self.tokenizer.cls_token, self.tokenizer.sep_token, self.tokenizer.pad_token):
+            if token in (
+                self.tokenizer.cls_token,
+                self.tokenizer.sep_token,
+                self.tokenizer.pad_token,
+            ):
                 continue
             num_tokens_exc_pad += 1
             if len(cand_indexes) >= 1 and not _is_start_piece_sp(token):
@@ -105,8 +111,10 @@ class DataCollatorForWholeWordMask(DataCollatorForLanguageModeling):
 
         return mask_labels
 
-    def mask_tokens(
-        self, inputs: torch.Tensor, mask_labels: torch.Tensor, special_tokens_mask: Optional[torch.Tensor] = None
+    def mask_tokens(self,
+        inputs: torch.Tensor,
+        mask_labels: torch.Tensor,
+        special_tokens_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original. Set
