@@ -142,20 +142,6 @@ class LeanTransformerConfig(PretrainedConfig):
         raise NotImplementedError(f"Unexpected SharedMatrix key: {key}")
 
 
-class LeanTransformerLayer(nn.Module):
-    def __init__(self, config: LeanTransformerConfig):
-        super().__init__()
-        self.config = config
-        assert config.chunk_size_feed_forward == 0, "chunking is not supported"
-        self.seq_len_dim = 1
-
-
-    def forward(self, hidden_states, attention_mask=None, output_attentions=False):
-        attention_output, *extras = self.attention(hidden_states, attention_mask, output_attentions)
-        ffn_output = self.ffn(attention_output)
-        return (ffn_output, attention_output, *extras)
-
-
 class LeanTransformer(nn.Module):
     def __init__(self, config: LeanTransformerConfig):
         super().__init__()
