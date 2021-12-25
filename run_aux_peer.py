@@ -10,8 +10,7 @@ from huggingface_hub import HfFolder, Repository
 from transformers import HfArgumentParser
 
 import utils
-from arguments import (AuxiliaryPeerArguments, CollaborativeArguments,
-                       HFTrainerArguments)
+from arguments import AuxiliaryPeerArguments, CollaborativeArguments, HFTrainerArguments
 from tasks.mlm.task import MLMTrainingTask
 
 transformers.utils.logging.set_verbosity_warning()
@@ -81,7 +80,7 @@ class CheckpointHandler:
 
 
 def assist_averaging_in_background(
-        lock: threading.Lock, task: MLMTrainingTask, peer_args: AuxiliaryPeerArguments, finished: threading.Event
+    lock: threading.Lock, task: MLMTrainingTask, peer_args: AuxiliaryPeerArguments, finished: threading.Event
 ):
     while not finished.is_set():
         try:
@@ -110,8 +109,10 @@ if __name__ == "__main__":
     if peer_args.assist_in_averaging:
         assert not peer_args.client_mode, "client-mode peers cannot assist in averaging"
         averaging_thread = threading.Thread(
-            name="AveragingAuxThread", target=assist_averaging_in_background,
-            args=[lock, task, peer_args, finished], daemon=True
+            name="AveragingAuxThread",
+            target=assist_averaging_in_background,
+            args=[lock, task, peer_args, finished],
+            daemon=True,
         )
         averaging_thread.start()
 
