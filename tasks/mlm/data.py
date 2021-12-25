@@ -15,7 +15,7 @@ from lib.training.yt_streaming import YTDataset
 logger = get_logger(__name__)
 
 
-def make_dataset(
+def make_training_dataset(
     tokenizer,
     shuffle_buffer_size: int = 10 ** 4,
     shuffle_seed: Optional[int] = None,
