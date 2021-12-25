@@ -8,7 +8,7 @@ from datasets import IterableDataset, interleave_datasets
 from hivemind.utils.logging import get_logger
 from razdel import sentenize
 
-from lib.training.yt_streaming import YTDataset
+from tasks.mlm.yt_streaming import YTDataset
 
 logger = get_logger(__name__)
 
