@@ -10,7 +10,7 @@ class CollaborativeArguments:
     """Configuration for CollaborativeOptimizer and its internals"""
 
     target_batch_size: int = field(
-        default=16384,
+        default=4096,
         metadata={"help": "Perform optimizer step after all peers collectively accumulate this many samples"},
     )
     matchmaking_time: float = field(
@@ -20,7 +20,7 @@ class CollaborativeArguments:
         default=30.0, metadata={"help": "Consider allreduce peer failed if it does not respond in this many seconds"}
     )
     averaging_timeout: float = field(
-        default=480.0, metadata={"help": "Give up on averaging step after this many seconds"}
+        default=300.0, metadata={"help": "Give up on averaging step after this many seconds"}
     )
     offload_optimizer: bool = field(default=True, metadata={"help": "Whether or not to offload optimizer into RAM"})
     delay_optimizer_step: bool = field(
@@ -48,7 +48,7 @@ class HFTrainerArguments(TrainingArguments):
     per_device_eval_batch_size: int = 1
     gradient_accumulation_steps: int = 1
 
-    learning_rate: float = 0.0025
+    learning_rate: float = 0.001
     total_steps: int = 31250  # total number of collaborative optimizer updates, used for learning rate schedule
     warmup_steps: int = 3125
     min_learning_rate: float = 1e-5  # learning rate after total_steps have passed
@@ -105,13 +105,13 @@ class BasePeerArguments:
 
     run_id: str = field(metadata={"help": "A unique experiment name, used as prefix for all DHT keys"})
     model_config_path: Optional[str] = field(
-        default="./tasks/mlm/model.json", metadata={"help": "Path to the model config"}
+        default="./model.json", metadata={"help": "Path to the model config"}
     )
     tokenizer_path: Optional[str] = field(
-        default="aubmindlab/bert-base-arabert", metadata={"help": "Path to the tokenizer"}
+        default="./tokenizer", metadata={"help": "Path to the tokenizer"}
     )
     cache_dir: Optional[str] = field(default="./cache", metadata={"help": "Path to the cache"})
-    authorize: bool = field(default=True, metadata={"help": "Whether or not to use HF authorizer"})
+    authorize: bool = field(default=False, metadata={"help": "Whether or not to use HF authorizer"})
     client_mode: bool = field(
         default=False,
         metadata={"help": "If True, runs training without incoming connections, in a firewall-compatible mode"},
