@@ -7,10 +7,16 @@ import hivemind
 import torch.optim
 import transformers
 from hivemind import Float16Compression, SizeAdaptiveCompression, Uniform8BitQuantization
+
+from tasks.register import TrainingTaskBase, register_task
+
 try:
     from hivemind.optim.experimental.state_averager import LRSchedulerBase, ParamGroups
 except ImportError:
     from hivemind.optim.state_averager import LRSchedulerBase, ParamGroups
+
+import multiprocessing as mp
+
 from torch.optim.lr_scheduler import LambdaLR
 from transformers import AutoTokenizer
 
@@ -19,16 +25,16 @@ from arguments import BasePeerArguments, CollaborativeArguments, HFTrainerArgume
 from huggingface_auth import authorize_with_huggingface
 from lib.models import LeanAlbertConfig, LeanAlbertForPreTraining
 from lib.training.lamb_8bit import CPULAMB8Bit
-import multiprocessing as mp
 
-from .whole_word_mask import DataCollatorForWholeWordMask
 from .data import make_training_dataset
+from .whole_word_mask import DataCollatorForWholeWordMask
 
 hivemind.use_hivemind_log_handler("in_root_logger")
 logger = hivemind.get_logger()
 
 
-class MLMTrainingTask:
+@register_task("mlm")
+class MLMTrainingTask(TrainingTaskBase):
     """A container that defines the training config, model, tokenizer, optimizer and other local training utilities"""
 
     _dht = _collaborative_optimizer = _training_dataset = _authorizer = None
@@ -136,7 +142,7 @@ class MLMTrainingTask:
             eps=self.trainer_args.adam_epsilon,
             weight_decay=self.trainer_args.weight_decay,
             reuse_grad_buffers=True,
-            bias_correction=True
+            bias_correction=True,
         )
 
     def _make_scheduler(self, optimizer: torch.optim.Optimizer) -> LRSchedulerBase:
@@ -162,13 +168,19 @@ class MLMTrainingTask:
             )
         return self._training_dataset
 
+    def on_step_end(self):
+        return self.update_sequence_length()
+
     def update_sequence_length(self):
         """
         If ramp-up is enabled, start with smaller sequences of initial_sequence_length tokens, then increase linearly
         to the max_sequence_length over the period of first
         """
         current_epoch = self.collaborative_optimizer.tracker.global_epoch
-        if self.trainer_args.sequence_length_warmup_steps == 0 or current_epoch > self.trainer_args.sequence_length_warmup_steps:
+        if (
+            self.trainer_args.sequence_length_warmup_steps == 0
+            or current_epoch > self.trainer_args.sequence_length_warmup_steps
+        ):
             current_sequence_length = self.trainer_args.max_sequence_length
         else:
             increment_size = self.trainer_args.pad_to_multiple_of
