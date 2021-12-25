@@ -10,7 +10,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from lib.modules import LeanFFN, LeanSelfAttention
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import AdaptedLinear, SharedLinear, SharedMatrix
-from lib.modules.sequence import SequentialWithKwargs, ActiveKwargs
+from lib.modules.sequence import SequentialWithKwargs, ActiveKwargs, ReversibleWithKwargs
 
 
 class LeanTransformerConfig(PretrainedConfig):
@@ -159,10 +159,10 @@ class LeanTransformer(nn.Module):
             for i in range(self.config.num_hidden_layers):
                 group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
                 for layer in self.layer_groups[group_idx].layers:
-                    sequence.append(ActiveKwargs(layer.attention, ("attention_mask",)))
+                    sequence.append(ActiveKwargs(layer.attention, ("attention_mask",), use_first_output=True))
                     sequence.append(ActiveKwargs(layer.ffn))
-            sequential = ReversibleSequence(*sequence) if self.config.reversible else SequentialWithKwargs
-            self._sequential = lambda: sequential
+            sequential_cls = ReversibleWithKwargs if self.config.reversible else SequentialWithKwargs
+            self._sequential = lambda: sequential_cls(*sequence)
         return self._sequential()
 
     def _make_attention(self, config: LeanTransformerConfig):
