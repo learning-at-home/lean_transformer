@@ -11,8 +11,8 @@ TASKS = {}
 
 def register_task(name: str):
     def _register(cls: Type[TrainingTaskBase]):
-        if cls not in name:
-            logger.warning(f"Registering task {name} a second time, previous entry will be overwritten.")
+        if name in TASKS:
+            logger.warning(f"Registering task {name} a second time, previous entry will be overwritten")
         TASKS[name] = cls
         return cls
 

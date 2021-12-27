@@ -3,33 +3,8 @@ import functools
 from typing import Optional
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import einops
-
-
-class PixelflyLinear(nn.Module):
-    def __init__(
-            self, in_features: int, out_features: int,
-            lowrank_size: int, block_size: int, butterfly_size: int,
-            n_factors: Optional[int] = None, stretch: bool = True, bias: bool = True,
-    ):
-        super().__init__()
-        self.out_features, self.in_features = out_features, in_features
-        self.register_buffer("butterfly_flat_indices", get_butterfly_indices(
-            out_features, in_features, block_size, butterfly_size, n_factors, stretch))
-        self.lowrank_first = nn.Linear(in_features, lowrank_size, bias=False)
-        self.lowrank_second = nn.Linear(lowrank_size, out_features, bias=bias)
-
-        active_blocks_per_input = self.butterfly_flat_indices.numel() // (in_features // block_size)
-        self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
-        nn.init.xavier_normal_(self.weight)
-
-    def forward(self, input):
-        output = self.lowrank_second(self.lowrank_first(input))
-        output += butterfly_matmul(input, self.weight, self.butterfly_flat_indices)
-        return output
-
 
 @functools.lru_cache
 def get_butterfly_indices(
@@ -41,12 +16,14 @@ def get_butterfly_indices(
     stretch: bool = False,
 ) -> torch.IntTensor:
     """
-    Get a matrix [num_output_blocks, num_active_input_blocks] with int32 indices for additive butterfly
+    Get a matrix [num_output_blocks, num_active_input_blocks] with int32 indices for additive butterfly.
+    The values in the matrix represent
     Based on the original implementation from https://arxiv.org/abs/2112.00029 .
 
     :param stretch: by default, non-square matrices will have stretched butterfly patterns,
       otherwise the square pattern will be repeated a given number of times
     """
+    raise NotImplementedError("THIS IS AN OLD VERSION PLEASE REPLACE WITH THE NEW ONE!")
     assert (
         out_features % in_features == 0 or in_features % out_features == 0
     ), "if matrix is not square, the longer dimension must be a multiple of the shorter dimension"
@@ -61,10 +38,7 @@ def get_butterfly_indices(
         )
 
     twiddle = torch.ones(butterfly_size // 2, 2, 2)
-    layout = sum(
-        butterfly_factor_to_matrix(twiddle, index) for index in range(n_factors)
-    )
-    layout = layout.bool().int()
+    layout = sum(butterfly_factor_to_matrix(twiddle, index) for index in range(n_factors)).bool().int()
     # Convert from (butterfly_size, butterfly_size) mask to (out_features, in_features) mask
     layout = einops.repeat(
         layout,
@@ -81,49 +55,31 @@ def get_butterfly_indices(
         blksz1=block_size,
     )
 
-    layout = (layout > 0).any(
-        dim=-1
-    )  # [out_features // block_size, in_features // block_size]
+    layout = (layout > 0).any(dim=-1)  # [out_features // block_size, in_features // block_size]
     if not stretch:
         out_blocks, in_blocks = layout.shape
         if out_blocks > in_blocks:
             ratio = out_blocks // in_blocks
-            layout = (
-                layout.view(out_blocks // ratio, ratio, in_blocks)
-                .permute(1, 0, 2)
-                .reshape_as(layout)
-            )
+            layout = layout.view(out_blocks // ratio, ratio, in_blocks).permute(1, 0, 2).reshape_as(layout)
         elif out_blocks < in_blocks:
             ratio = in_blocks // out_blocks
-            layout = (
-                layout.view(out_blocks, in_blocks // ratio, ratio)
-                .permute(0, 2, 1)
-                .reshape_as(layout)
-            )
+            layout = layout.view(out_blocks, in_blocks // ratio, ratio).permute(0, 2, 1).reshape_as(layout)
 
     # convert boolean layout to indices for F.embedding_bag
     num_output_blocks = out_features // block_size
     num_input_blocks = in_features // block_size
     active_blocks_per_output = layout.sum(1).unique()
-    assert (
-        len(active_blocks_per_output) == 1
-    ), "butterfly layout must have the same number of blocks per row"
+    assert len(active_blocks_per_output) == 1, "butterfly layout must have the same number of blocks per row"
     active_blocks_per_output = active_blocks_per_output.item()
 
     active_blocks_per_input = layout.sum(0).unique()
-    assert (
-        len(active_blocks_per_input) == 1
-    ), "butterfly layout must have the same number of blocks per row"
+    assert len(active_blocks_per_input) == 1, "butterfly layout must have the same number of blocks per row"
     active_blocks_per_input = active_blocks_per_input.item()
 
     # which input blocks should be added for i-th output
-    input_block_index = layout.nonzero()[:, 1].view(
-        num_output_blocks, active_blocks_per_output
-    )
+    input_block_index = layout.nonzero()[:, 1].view(num_output_blocks, active_blocks_per_output)
     # which output blocks does j-th input contribute to
-    output_block_index = (
-        layout.t().nonzero()[:, 1].view(num_input_blocks, active_blocks_per_input)
-    )
+    output_block_index = layout.t().nonzero()[:, 1].view(num_input_blocks, active_blocks_per_input)
 
     # which of the active blocks from the corresponding input_block should be used for i-th output
     active_block_index = torch.where(
@@ -133,7 +89,9 @@ def get_butterfly_indices(
         )
     )[-1].view(input_block_index.shape)
 
-    return input_block_index * active_blocks_per_input + active_block_index
+    forward_indices = input_block_index * active_blocks_per_input + active_block_index
+
+    return forward_indices
 
 
 def butterfly_factor_to_matrix(
@@ -165,9 +123,7 @@ def butterfly_factor_to_matrix(
     )  # Transpose because we assume the 1st dimension of x is the batch dimension
 
 
-def butterfly_matmul(
-    input: torch.Tensor, weight: torch.Tensor, butterfly_flat_indices: torch.Tensor
-):
+def butterfly_matmul(input: torch.Tensor, weight: torch.Tensor, butterfly_flat_indices: torch.Tensor) -> torch.Tensor:
     """
     :param input: tensor [*batch_dims, in_features]
     :param weight: tensor [in_features, active_blocks_per_input, block_size]
@@ -175,27 +131,20 @@ def butterfly_matmul(
     :returns: tensor [*batch_dims, out_features]
     """
     assert input.shape[-1] == weight.shape[0]
+    assert weight.shape[1] == butterfly_flat_indices.shape[1]
     in_features, active_blocks_per_input, block_size = weight.shape
     num_input_blocks = in_features // block_size
     batch_dims = input.shape[:-1]
     input = input.flatten(0, -2)
 
-    input_permuted = input.t().view(
-        input.shape[1] // block_size, block_size, input.shape[0]
-    )
-    output_blocks = torch.bmm(
-        weight.view(num_input_blocks, -1, block_size), input_permuted
-    )
+    input_permuted = input.t().view(input.shape[1] // block_size, block_size, input.shape[0])
+    output_blocks = torch.bmm(weight.view(num_input_blocks, -1, block_size), input_permuted)
     # ^-- shape: [num_input_blocks, (active_blocks_per_input * block_size), flat_batch_dims]
 
-    blocks_for_indexing = output_blocks.view(
-        num_input_blocks * active_blocks_per_input, block_size * input.shape[0]
-    )
+    blocks_for_indexing = output_blocks.view(num_input_blocks * active_blocks_per_input, block_size * input.shape[0])
     # ^-- shape: [(num_input_blocks * active_blocks_per_input),  (block_size, flat_batch_dims)]
 
-    aggregated_blocks = F.embedding_bag(
-        butterfly_flat_indices, blocks_for_indexing, mode="sum"
-    )
+    aggregated_blocks = F.embedding_bag(butterfly_flat_indices, blocks_for_indexing, mode="sum")
     # ^-- shape: [num_ouput_blocks, (block_size, flat_batch_dims)]
 
     outputs = aggregated_blocks.view(-1, input.shape[0]).t()
