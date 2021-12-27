@@ -2,6 +2,8 @@
 import threading
 import time
 
+import scipy.stats  # compatibility for internal testing environment
+
 import torch
 import transformers
 import wandb
