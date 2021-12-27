@@ -1,3 +1,4 @@
+import scipy.stats  # compatibility for internal testing environment
 from typing import Type
 
 import hivemind
