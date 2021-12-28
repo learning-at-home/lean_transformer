@@ -123,7 +123,7 @@ class LeanAlbertModel(GradientCheckpointingMixin, PreTrainedModel):
 
         self.config = config
         self.embeddings = LeanAlbertEmbeddings(config)
-        self.encoder = LeanTransformer(config)
+        self.transformer = LeanTransformer(config)
 
         if add_pooling_layer:
             self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
@@ -187,7 +187,7 @@ class LeanAlbertModel(GradientCheckpointingMixin, PreTrainedModel):
         embedding_output = self.embeddings(
             input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         )
-        encoder_outputs = self.encoder(embedding_output, extended_attention_mask)
+        encoder_outputs = self.transformer(embedding_output, extended_attention_mask)
 
         sequence_output = encoder_outputs[0]
 
