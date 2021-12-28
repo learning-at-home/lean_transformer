@@ -120,14 +120,14 @@ class MLMTrainingTask(TrainingTaskBase):
         return self._collaborative_optimizer
 
     def _make_param_groups(self) -> ParamGroups:
-        no_decay = ["bias", "LayerNorm.weight"]
+        no_decay = ["bias", "norm.weight"]
         return [
             {
-                "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
+                "params": [p for n, p in self.model.named_parameters() if not any(n.endswith(nd) for nd in no_decay)],
                 "weight_decay": self.trainer_args.weight_decay,
             },
             {
-                "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
+                "params": [p for n, p in self.model.named_parameters() if any(n.endswith(nd) for nd in no_decay)],
                 "weight_decay": 0.0,
             },
         ]
