@@ -151,7 +151,7 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         self.transformer.embeddings.word_embeddings = new_embeddings
 
     def _init_weights(self, module: nn.Module):
-        return self.config._init_weights(module)
+        return self.config.init_weights(module)
 
     def forward(
             self,
