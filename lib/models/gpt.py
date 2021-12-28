@@ -34,6 +34,8 @@ class LeanGPTConfig(LeanTransformerConfig):
     def __init__(
         self,
         *args,
+        vocab_size: int = 50257,
+        embedding_size: int = 1024,
         type_vocab_size: int = 2,
         pad_token_id: int = 0,
         bos_token_id: int = 2,
@@ -48,6 +50,8 @@ class LeanGPTConfig(LeanTransformerConfig):
             type_vocab_size=type_vocab_size,
             **kwargs
         )
+        self.vocab_size = vocab_size
+        self.embedding_size = embedding_size
         self.type_vocab_size = type_vocab_size
 
 
@@ -166,21 +170,41 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
             output_hidden_states=None,
             return_dict=None,
     ):
+        assert head_mask is None and output_attentions is None and output_hidden_states is None, "not implemented"
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        transformer_outputs = self.transformer(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
+        if input_ids is not None and inputs_embeds is not None:
+            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+        elif input_ids is not None:
+            input_shape = input_ids.size()
+        elif inputs_embeds is not None:
+            input_shape = inputs_embeds.size()[:-1]
+        else:
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
+
+        batch_size, seq_length = input_shape
+        device = input_ids.device if input_ids is not None else inputs_embeds.device
+
+        if attention_mask is None:
+            attention_mask = torch.ones(input_shape, device=device)
+        if token_type_ids is None:
+            if hasattr(self.embeddings, "token_type_ids"):
+                buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
+            else:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+
+        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        print(extended_attention_mask.shape)
+
+        embedding_output = self.embeddings(
+            input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         )
-        hidden_states = transformer_outputs[0]
-        lm_logits = self.lm_head(hidden_states)
+        transformer_outputs = self.transformer(embedding_output, extended_attention_mask)
+        lm_logits = self.lm_head(transformer_outputs.hidden_states)
 
         loss = None
         if labels is not None:
