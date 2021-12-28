@@ -50,13 +50,13 @@ class AdaptedLinear(SharedLinear):
         if adapter_dim != 0:
             self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
             self.adapter_second = nn.Parameter(torch.zeros(self.out_features, adapter_dim))
+
+            # initialize in accordance with https://arxiv.org/pdf/2106.09685.pdf
+            nn.init.xavier_normal_(self.adapter_first)
+            nn.init.zeros_(self.adapter_second)
         else:
             self.adapter_first = self.adapter_second = None
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
-
-        # initialize in accordance with https://arxiv.org/pdf/2106.09685.pdf
-        nn.init.xavier_normal_(self.adapter_first)
-        nn.init.zeros_(self.adapter_second)
 
     def forward(self, input):
         return _GeneralizedLinear.apply(
