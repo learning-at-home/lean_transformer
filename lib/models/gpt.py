@@ -23,7 +23,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 
 from lib.models.transformer import LeanTransformer, LeanTransformerConfig
-from lib.modules.sequence import SequentialWithKwargs
+from lib.modules.sequence import GradientCheckpointingMixin
 
 logger = logging.get_logger(__name__)
 
@@ -130,14 +130,6 @@ class TiedMLMHead(nn.Module):
         weight = self.embeddings.word_embeddings.weight.t()
         logits = F.linear(input=hidden_states, weight=weight, bias=self.logits_bias)
         return logits
-
-
-class GradientCheckpointingMixin:
-    supports_gradient_checkpointing = True
-
-    def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
-        if isinstance(module, SequentialWithKwargs):
-            module.gradient_checkpointing = value
 
 
 class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
