@@ -150,22 +150,8 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
     def set_input_embeddings(self, new_embeddings: nn.Module):
         self.transformer.embeddings.word_embeddings = new_embeddings
 
-    def _init_weights(self, module):
-        """Initialize the weights."""
-        logger.warning("INIT IS MESSED UP, GO UNMESS IT!")
-        if isinstance(module, nn.Linear):
-            # Slightly different from the TF version which uses truncated_normal for initialization
-            # cf https://github.com/pytorch/pytorch/pull/5617
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            if module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
+    def _init_weights(self, module: nn.Module):
+        return self.config._init_weights(module)
 
     def forward(
             self,

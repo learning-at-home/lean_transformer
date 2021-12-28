@@ -140,7 +140,7 @@ class LeanAlbertModel(GradientCheckpointingMixin, PreTrainedModel):
         self.embeddings.word_embeddings = value
 
     def _init_weights(self, module: nn.Module):
-        return LeanTransformer._init_weights(module, initializer_range=self.config.initializer_range)
+        return self.config._init_weights(module, initializer_range=self.config.initializer_range)
 
     def forward(
         self,
@@ -266,7 +266,7 @@ class LeanAlbertForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         self.predictions.decoder = new_embeddings
 
     def _init_weights(self, module: nn.Module):
-        return LeanTransformer._init_weights(module, initializer_range=self.config.initializer_range)
+        return self.config._init_weights(module, initializer_range=self.config.initializer_range)
 
     def forward(
         self,
