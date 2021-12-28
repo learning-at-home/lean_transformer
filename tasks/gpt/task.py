@@ -8,6 +8,7 @@ import torch.optim
 import transformers
 from hivemind import Float16Compression, SizeAdaptiveCompression, Uniform8BitQuantization
 
+from lib.models.gpt import LeanGPTConfig, LeanGPTForPreTraining
 from tasks.register import TrainingTaskBase, register_task
 
 try:
@@ -31,7 +32,7 @@ hivemind.use_hivemind_log_handler("in_root_logger")
 logger = hivemind.get_logger()
 
 
-@register_task("mlm")
+@register_task("clm")
 class CausalLMTask(TrainingTaskBase):
     """A container that defines the training config, model, tokenizer, optimizer and other local training utilities"""
 
@@ -57,11 +58,11 @@ class CausalLMTask(TrainingTaskBase):
 
         if latest_checkpoint_dir is None:
             logger.info(f"Creating model")
-            self.model = LeanGPTForPretraining(self.config)
+            self.model = LeanGPTForPreTraining(self.config)
             self.model.resize_token_embeddings(len(self.tokenizer))
         else:
             logger.info(f"Loading model from {latest_checkpoint_dir}")
-            self.model = LeanGPTForPretraining.from_pretrained(latest_checkpoint_dir)
+            self.model = LeanGPTForPreTraining.from_pretrained(latest_checkpoint_dir)
         if trainer_args.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
 
