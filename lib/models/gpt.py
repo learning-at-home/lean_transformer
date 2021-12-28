@@ -22,8 +22,7 @@ from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 
-from lib.models.transformer import LeanTransformer, LeanTransformerConfig
-from lib.modules.sequence import GradientCheckpointingMixin
+from lib.models.transformer import LeanTransformer, LeanTransformerConfig, GradientCheckpointingMixin
 
 logger = logging.get_logger(__name__)
 
@@ -67,7 +66,7 @@ class LeanGPTEmbeddings(nn.Module):
         self.layer_norm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if config.embedding_size != config.hidden_size:
-            self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
+            self.embedding_hidden_mapping = nn.Linear(config.embedding_size, config.hidden_size)
 
         if self.position_embeddings is not None:
             # position_ids (1, len position emb) is contiguous in memory and exported when serialized
@@ -103,7 +102,7 @@ class LeanGPTEmbeddings(nn.Module):
         embeddings = self.layer_norm(embeddings)
         embeddings = self.dropout(embeddings)
         if hasattr(self, "embedding_hidden_mapping_in"):
-            embeddings = self.embedding_hidden_mapping_in(embeddings)
+            embeddings = self.embedding_hidden_mapping(embeddings)
         return embeddings
 
 
@@ -121,7 +120,7 @@ class TiedMLMHead(nn.Module):
 
     def forward(self, hidden_states):
         if hasattr(self, "hidden_bias"):
-            weight = self.embeddings.embedding_hidden_mapping_in.weight.t()
+            weight = self.embeddings.embedding_hidden_mapping.weight.t()
             hidden_states = F.linear(input=hidden_states, weight=weight, bias=self.hidden_bias)
 
         hidden_states = self.activation(hidden_states)

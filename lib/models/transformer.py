@@ -7,7 +7,7 @@ from transformers import PretrainedConfig
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutput
 
-from lib.modules import LeanFFN, LeanSelfAttention, SequentialWithKwargs
+from lib.modules import LeanFFN, LeanSelfAttention
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import AdaptedLinear, SharedLinear, SharedMatrix
 from lib.modules.sequence import SequentialWithKwargs, ActiveKwargs, ReversibleWithKwargs
@@ -217,3 +217,11 @@ def _init_weights(module: nn.Module, *, initializer_range: float):
     elif isinstance(module, nn.LayerNorm):
         module.bias.data.zero_()
         module.weight.data.fill_(1.0)
+
+
+class GradientCheckpointingMixin:
+    supports_gradient_checkpointing = True
+
+    def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
+        if isinstance(module, LeanTransformer):
+            module._get_sequential().gradient_checkpointing = value

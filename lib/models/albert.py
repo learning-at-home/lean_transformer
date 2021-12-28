@@ -22,8 +22,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.albert.modeling_albert import AlbertForPreTrainingOutput
 from transformers.utils import logging
 
-from lib.models.transformer import LeanTransformer, LeanTransformerConfig, _init_weights
-from lib.modules.sequence import GradientCheckpointingMixin
+from lib.models.transformer import LeanTransformer, LeanTransformerConfig, _init_weights, GradientCheckpointingMixin
 
 logger = logging.get_logger(__name__)
 
@@ -73,7 +72,7 @@ class LeanAlbertEmbeddings(nn.Module):
         self.layer_norm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if config.embedding_size != config.hidden_size:
-            self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
+            self.embedding_hidden_mapping = nn.Linear(config.embedding_size, config.hidden_size)
 
         if self.position_embeddings is not None:
             # position_ids (1, len position emb) is contiguous in memory and exported when serialized
@@ -109,7 +108,7 @@ class LeanAlbertEmbeddings(nn.Module):
         embeddings = self.layer_norm(embeddings)
         embeddings = self.dropout(embeddings)
         if hasattr(self, "embedding_hidden_mapping_in"):
-            embeddings = self.embedding_hidden_mapping_in(embeddings)
+            embeddings = self.embedding_hidden_mapping(embeddings)
         return embeddings
 
 
