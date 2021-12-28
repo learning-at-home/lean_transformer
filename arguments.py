@@ -63,14 +63,15 @@ class HFTrainerArguments(TrainingArguments):
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0  # clipping performed by the optimizer; trainer is modified to disable builtin clipping
     clamp_value: float = 1e9  # no clipping by value
+    min_8bit_size: int = 2 ** 20
 
     gradient_checkpointing: bool = False  # can be enabled to save memory at the cost of ~30% slower training
     fp16: bool = False  # can be enabled depending on the device
 
-    max_sequence_length: int = 512
-    sequence_length_warmup_steps: int = 10_000
+    max_sequence_length: int = 2048
+    sequence_length_warmup_steps: int = 15_000
     initial_sequence_length: Optional[int] = 128  # used only if warmup > 0, default = pad_to_multiple_of
-    pad_to_multiple_of: int = 32  # sequence length will be divisible by this value
+    pad_to_multiple_of: int = 128  # sequence length will be divisible by this value
 
     output_dir: str = "outputs"
     logging_steps: int = 100
