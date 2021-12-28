@@ -19,16 +19,11 @@ import torch.nn as nn
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.modeling_utils import PreTrainedModel
-from transformers.models.albert.modeling_albert import (
-    AlbertForPreTraining,
-    AlbertForSequenceClassification,
-    AlbertForTokenClassification,
-    AlbertModel,
-)
+from transformers.models.albert.modeling_albert import AlbertForPreTrainingOutput
 from transformers.utils import logging
 
 from lib.models.transformer import LeanTransformer, LeanTransformerConfig
-from lib.modules.sequence import SequentialWithKwargs
+from lib.modules.sequence import GradientCheckpointingMixin
 
 logger = logging.get_logger(__name__)
 
@@ -118,15 +113,18 @@ class LeanAlbertEmbeddings(nn.Module):
         return embeddings
 
 
-class LeanAlbertModel(AlbertModel):
+class LeanAlbertModel(GradientCheckpointingMixin, PreTrainedModel):
     config_class = LeanAlbertConfig
+    base_model_prefix = "lean_albert"
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config: config_class, add_pooling_layer=True):
-        PreTrainedModel.__init__(self, config)
+        super().__init__(config)
 
         self.config = config
         self.embeddings = LeanAlbertEmbeddings(config)
         self.encoder = LeanTransformer(config)
+        self.encoder.init_weights()
 
         if add_pooling_layer:
             self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
@@ -136,6 +134,12 @@ class LeanAlbertModel(AlbertModel):
             self.pooler_activation = None
 
         self.init_weights()
+
+    def get_input_embeddings(self):
+        return self.embeddings.word_embeddings
+
+    def set_input_embeddings(self, value):
+        self.embeddings.word_embeddings = value
 
     def forward(
         self,
@@ -198,14 +202,6 @@ class LeanAlbertModel(AlbertModel):
         )
 
 
-class GradientCheckpointingMixin:
-    supports_gradient_checkpointing = True
-
-    def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
-        if isinstance(module, SequentialWithKwargs):
-            module.gradient_checkpointing = value
-
-
 class AlbertMLMHead(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -245,20 +241,16 @@ class AlbertSOPHead(nn.Module):
         return logits
 
 
-
-
-class LeanAlbertForPreTraining(GradientCheckpointingMixin, AlbertForPreTraining, PreTrainedModel):
+class LeanAlbertForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
     config_class = LeanAlbertConfig
     base_model_prefix = "lean_albert"
 
     def __init__(self, config: config_class):
-        PreTrainedModel.__init__(self, config)
+        super().__init__(config)
 
         self.albert = LeanAlbertModel(config)
         self.predictions = AlbertMLMHead(config)
         self.sop_classifier = AlbertSOPHead(config)
-
-        self.init_weights()
 
     def get_input_embeddings(self):
         return self.albert.embeddings.word_embeddings
@@ -266,51 +258,60 @@ class LeanAlbertForPreTraining(GradientCheckpointingMixin, AlbertForPreTraining,
     def set_input_embeddings(self, new_embeddings: nn.Module):
         self.albert.embeddings.word_embeddings = new_embeddings
 
-    def _init_weights(self, module):
-        """Initialize the weights."""
-        if isinstance(module, nn.Linear):
-            # Slightly different from the TF version which uses truncated_normal for initialization
-            # cf https://github.com/pytorch/pytorch/pull/5617
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            if module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
+    def get_output_embeddings(self):
+        return self.predictions.decoder
 
+    def set_output_embeddings(self, new_embeddings):
+        self.predictions.decoder = new_embeddings
 
-class LeanAlbertForTokenClassification(AlbertForTokenClassification, PreTrainedModel, GradientCheckpointingMixin):
-    config_class = LeanAlbertConfig
-    base_model_prefix = "lean_albert"
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        sentence_order_label=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-    def __init__(self, config: config_class):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-
-        self.albert = LeanAlbertModel(config, add_pooling_layer=False)
-        classifier_dropout_prob = (
-            config.classifier_dropout_prob if config.classifier_dropout_prob is not None else config.hidden_dropout_prob
+        outputs = self.albert(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
-        self.dropout = nn.Dropout(classifier_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
 
-        self.init_weights()
+        sequence_output, pooled_output = outputs[:2]
 
+        prediction_scores = self.predictions(sequence_output)
+        sop_scores = self.sop_classifier(pooled_output)
 
-class LeanAlbertForSequenceClassification(AlbertForSequenceClassification, PreTrainedModel, GradientCheckpointingMixin):
-    config_class = LeanAlbertConfig
-    base_model_prefix = "lean_albert"
+        total_loss = None
+        if labels is not None and sentence_order_label is not None:
+            loss_fct = nn.CrossEntropyLoss()
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+            sentence_order_loss = loss_fct(sop_scores.view(-1, 2), sentence_order_label.view(-1))
+            total_loss = masked_lm_loss + sentence_order_loss
 
-    def __init__(self, config: config_class):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-        self.config = config
-        self.albert = LeanAlbertModel(config, add_pooling_layer=True)
-        self.dropout = nn.Dropout(config.classifier_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
+        if not return_dict:
+            output = (prediction_scores, sop_scores) + outputs[2:]
+            return ((total_loss,) + output) if total_loss is not None else output
 
-        self.init_weights()
+        return AlbertForPreTrainingOutput(
+            loss=total_loss,
+            prediction_logits=prediction_scores,
+            sop_logits=sop_scores,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )

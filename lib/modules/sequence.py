@@ -4,6 +4,7 @@ import typing
 
 import torch
 import torch.nn as nn
+from torch import nn as nn
 from torch.utils.checkpoint import checkpoint
 from revlib import MemoryModes, ReversibleModuleCache, replace_grad, ReversibleModule, DUAL_OR_QUAD_TENSOR
 
@@ -82,3 +83,11 @@ class ReversibleWithKwargs(torch.nn.Module):
             inp1 = zeros = torch.zeros_like(inp0)
             out0, out1 = self.replace_grad(*self.stem((inp0, inp1, zeros, zeros)))
             return out0 if len(self.stem) % 2 == 0 else out1  # return the last updated out
+
+
+class GradientCheckpointingMixin:
+    supports_gradient_checkpointing = True
+
+    def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
+        if isinstance(module, SequentialWithKwargs):
+            module.gradient_checkpointing = value

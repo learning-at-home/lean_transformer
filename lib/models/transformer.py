@@ -2,11 +2,12 @@ import math
 from functools import lru_cache
 from typing import Optional
 
-from torch import nn
+from torch import nn as nn
 from transformers import PretrainedConfig
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutput
 
+from lib import SequentialWithKwargs
 from lib.modules import LeanFFN, LeanSelfAttention
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import AdaptedLinear, SharedLinear, SharedMatrix
@@ -193,17 +194,26 @@ class LeanTransformer(nn.Module):
         hidden_states = self._get_sequential()(hidden_states, attention_mask=attention_mask)
         return BaseModelOutput(self.post_layer_norm(hidden_states))
 
+    def init_weights(self):
+        self.apply(self._init_weights)
 
-class SequentialWrapper(nn.Module):
-    """Adapts a self-attention or ffn module to be a part of torch.nn.Sequential"""
-
-    def __init__(self, module: nn.Module, active_kwargs=(), undo_residual: bool = False):
-        super().__init__()
-        self.module, self.active_kwargs, self.undo_residual = module, active_kwargs, undo_residual
-
-    def forward(self, input, **kwargs):
-        active_kwargs = {key: value for key, value in kwargs.items() if key in self.active_kwargs}
-        output = self.module(input, **active_kwargs)
-        if self.undo_residual:
-            output = output - input
-        return output, kwargs
+    def _init_weights(self, module: nn.Module):
+        """Initialize the weights."""
+        if isinstance(module, SharedLinear):
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, SharedMatrix):
+            module.matrix.data.normal_(mean=0.0, std=self.config.initializer_range)
+        elif isinstance(module, nn.Linear):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
