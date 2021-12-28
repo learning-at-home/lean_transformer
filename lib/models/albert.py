@@ -106,7 +106,7 @@ class LeanAlbertEmbeddings(nn.Module):
             position_embeddings = self.position_embeddings(position_ids)
             embeddings += position_embeddings
 
-        embeddings = self.layernorm(embeddings)
+        embeddings = self.layer_norm(embeddings)
         embeddings = self.dropout(embeddings)
         if hasattr(self, "embedding_hidden_mapping_in"):
             embeddings = self.embedding_hidden_mapping_in(embeddings)

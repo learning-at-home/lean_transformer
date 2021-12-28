@@ -64,7 +64,7 @@ class LeanGPTEmbeddings(nn.Module):
         self.token_type_embeddings = config.get_token_type_embeddings()
         self.position_embeddings = config.get_input_position_embeddings()
 
-        self.layernorm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
+        self.layer_norm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if config.embedding_size != config.hidden_size:
             self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
@@ -100,7 +100,7 @@ class LeanGPTEmbeddings(nn.Module):
             position_embeddings = self.position_embeddings(position_ids)
             embeddings += position_embeddings
 
-        embeddings = self.layernorm(embeddings)
+        embeddings = self.layer_norm(embeddings)
         embeddings = self.dropout(embeddings)
         if hasattr(self, "embedding_hidden_mapping_in"):
             embeddings = self.embedding_hidden_mapping_in(embeddings)
