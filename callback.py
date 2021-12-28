@@ -40,12 +40,9 @@ class CollaborativeCallback(transformers.TrainerCallback):
         if os.path.isfile(self.state_path):
             self.restore_from_backup(self.state_path)
             logger.info("Loaded state")
-
-        logger.info("Loading state from peers")
-        self.collaborative_optimizer.load_state_from_peers()
-
-        if os.path.isfile(self.state_path):
-            self.restore_from_backup(self.state_path, check_epoch=True)
+        else:
+            logger.info("Loading state from peers")
+            self.collaborative_optimizer.load_state_from_peers()
 
     def on_step_end(
         self,
@@ -129,11 +126,21 @@ class CollaborativeCallback(transformers.TrainerCallback):
         state = torch.load(path)
         current_epoch = self.collaborative_optimizer.local_epoch
         backup_epoch = state["local_epoch"]
+
         if not check_epoch or backup_epoch >= current_epoch:
             self.task.model.load_state_dict(state["model"], strict=False)
             self.collaborative_optimizer.load_state_dict(state["training"])
             self.collaborative_optimizer.state_averager.scheduler.load_state_dict(state["scheduler"])
             self.collaborative_optimizer.state_averager.local_epoch = backup_epoch
+
+            if not self.collaborative_optimizer.client_mode:
+                self.collaborative_optimizer.state_averager.state_sharing_priority = self.collaborative_optimizer.local_epoch
+
+            if self.collaborative_optimizer.use_gradient_averaging:
+                self.collaborative_optimizer.grad_averager.reset_accumulated_grads_()
+                if not self.collaborative_optimizer.client_mode:
+                    self.collaborative_optimizer.grad_averager.state_sharing_priority = self.collaborative_optimizer.local_epoch
+
             logger.info("Restored from a backup")
         else:
             logger.info("Bypassed restoring state from local backup: backup state is too old.")
