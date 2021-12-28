@@ -194,29 +194,29 @@ class LeanTransformer(nn.Module):
         return BaseModelOutput(self.post_layer_norm(hidden_states))
 
     def init_weights(self):
-        self.apply(partial(_init_weights, initializer_range=self.config.initializer_range))
+        self.apply(partial(LeanTransformer._init_weights, initializer_range=self.config.initializer_range))
 
-
-def _init_weights(module: nn.Module, *, initializer_range: float):
-    """Initialize the weights."""
-    if isinstance(module, SharedLinear):
-        if module.bias is not None:
+    @staticmethod
+    def _init_weights(module: nn.Module, *, initializer_range: float):
+        """Initialize the weights."""
+        if isinstance(module, SharedLinear):
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, SharedMatrix):
+            module.matrix.data.normal_(mean=0.0, std=initializer_range)
+        elif isinstance(module, nn.Linear):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            module.weight.data.normal_(mean=0.0, std=initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=initializer_range)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+        elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
-    elif isinstance(module, SharedMatrix):
-        module.matrix.data.normal_(mean=0.0, std=initializer_range)
-    elif isinstance(module, nn.Linear):
-        # Slightly different from the TF version which uses truncated_normal for initialization
-        # cf https://github.com/pytorch/pytorch/pull/5617
-        module.weight.data.normal_(mean=0.0, std=initializer_range)
-        if module.bias is not None:
-            module.bias.data.zero_()
-    elif isinstance(module, nn.Embedding):
-        module.weight.data.normal_(mean=0.0, std=initializer_range)
-        if module.padding_idx is not None:
-            module.weight.data[module.padding_idx].zero_()
-    elif isinstance(module, nn.LayerNorm):
-        module.bias.data.zero_()
-        module.weight.data.fill_(1.0)
+            module.weight.data.fill_(1.0)
 
 
 class GradientCheckpointingMixin:

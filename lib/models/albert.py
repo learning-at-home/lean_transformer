@@ -22,7 +22,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.albert.modeling_albert import AlbertForPreTrainingOutput
 from transformers.utils import logging
 
-from lib.models.transformer import LeanTransformer, LeanTransformerConfig, _init_weights, GradientCheckpointingMixin
+from lib.models.transformer import LeanTransformer, LeanTransformerConfig, GradientCheckpointingMixin
 
 logger = logging.get_logger(__name__)
 
@@ -140,7 +140,7 @@ class LeanAlbertModel(GradientCheckpointingMixin, PreTrainedModel):
         self.embeddings.word_embeddings = value
 
     def _init_weights(self, module: nn.Module):
-        return _init_weights(module, initializer_range=self.config.initializer_range)
+        return LeanTransformer._init_weights(module, initializer_range=self.config.initializer_range)
 
     def forward(
         self,
@@ -266,7 +266,7 @@ class LeanAlbertForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         self.predictions.decoder = new_embeddings
 
     def _init_weights(self, module: nn.Module):
-        return _init_weights(module, initializer_range=self.config.initializer_range)
+        return LeanTransformer._init_weights(module, initializer_range=self.config.initializer_range)
 
     def forward(
         self,
