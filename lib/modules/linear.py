@@ -47,8 +47,11 @@ class AdaptedLinear(SharedLinear):
         nn.Module.__init__(self)
         self.out_features, self.in_features = shared_matrix.shape
         self.shared_matrix = shared_matrix
-        self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
-        self.adapter_second = nn.Parameter(torch.zeros(self.out_features, adapter_dim))
+        if adapter_dim != 0:
+            self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
+            self.adapter_second = nn.Parameter(torch.zeros(self.out_features, adapter_dim))
+        else:
+            self.adapter_first = self.adapter_second = None
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
 
         # initialize in accordance with https://arxiv.org/pdf/2106.09685.pdf
