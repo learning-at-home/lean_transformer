@@ -23,7 +23,6 @@ from transformers import AutoTokenizer, DataCollatorForLanguageModeling
 import utils
 from arguments import BasePeerArguments, CollaborativeArguments, HFTrainerArguments
 from huggingface_auth import authorize_with_huggingface
-from lib.models import LeanAlbertConfig, LeanAlbertForPreTraining
 from lib.training.lamb_8bit import CPULAMB8Bit
 
 from .data import make_training_dataset
@@ -49,7 +48,7 @@ class CausalLMTask(TrainingTaskBase):
             self.trainer_args.run_name = self.authorizer.username  # For wandb
         transformers.set_seed(trainer_args.seed)  # seed used for initialization
 
-        self.config = LeanAlbertConfig.from_pretrained(peer_args.model_config_path)
+        self.config = LeanGPTConfig.from_pretrained(peer_args.model_config_path)
         self.tokenizer = AutoTokenizer.from_pretrained(peer_args.tokenizer_path, cache_dir=peer_args.cache_dir)
 
         output_dir = Path(trainer_args.output_dir)

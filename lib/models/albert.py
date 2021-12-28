@@ -16,17 +16,14 @@
 
 import torch
 import torch.nn as nn
-from transformers.file_utils import add_start_docstrings
+from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.albert.modeling_albert import (
-    ALBERT_START_DOCSTRING,
     AlbertForPreTraining,
     AlbertForSequenceClassification,
     AlbertForTokenClassification,
-    AlbertMLMHead,
     AlbertModel,
-    AlbertSOPHead,
 )
 from transformers.utils import logging
 
@@ -78,7 +75,7 @@ class LeanAlbertEmbeddings(nn.Module):
         self.token_type_embeddings = config.get_token_type_embeddings()
         self.position_embeddings = config.get_input_position_embeddings()
 
-        self.layernorm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
+        self.layer_norm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if config.embedding_size != config.hidden_size:
             self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
@@ -121,10 +118,6 @@ class LeanAlbertEmbeddings(nn.Module):
         return embeddings
 
 
-@add_start_docstrings(
-    "The bare ALBERT-based LeanTransformer outputting raw hidden-states without any specific head on top.",
-    ALBERT_START_DOCSTRING,
-)
 class LeanAlbertModel(AlbertModel):
     config_class = LeanAlbertConfig
 
@@ -211,6 +204,47 @@ class GradientCheckpointingMixin:
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
         if isinstance(module, SequentialWithKwargs):
             module.gradient_checkpointing = value
+
+
+class AlbertMLMHead(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        self.layer_norm = nn.LayerNorm(config.embedding_size)
+        self.bias = nn.Parameter(torch.zeros(config.vocab_size))
+        self.dense = nn.Linear(config.hidden_size, config.embedding_size)
+        self.decoder = nn.Linear(config.embedding_size, config.vocab_size)
+        self.activation = ACT2FN[config.hidden_act]
+        self.decoder.bias = self.bias
+
+    def forward(self, hidden_states):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.activation(hidden_states)
+        hidden_states = self.layer_norm(hidden_states)
+        hidden_states = self.decoder(hidden_states)
+
+        prediction_scores = hidden_states
+
+        return prediction_scores
+
+    def _tie_weights(self):
+        # To tie those two weights if they get disconnected (on TPU or when the bias is resized)
+        self.bias = self.decoder.bias
+
+
+class AlbertSOPHead(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        self.dropout = nn.Dropout(config.classifier_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+
+    def forward(self, pooled_output):
+        dropout_pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(dropout_pooled_output)
+        return logits
+
+
 
 
 class LeanAlbertForPreTraining(GradientCheckpointingMixin, AlbertForPreTraining, PreTrainedModel):
