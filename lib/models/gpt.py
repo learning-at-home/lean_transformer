@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""PyTorch ALBERT modules that do not hog your GPU memory """
+"""PyTorch GPT modules that do not hog your GPU memory """
 
 import torch
 import torch.nn as nn
@@ -161,7 +161,7 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
 
     def _init_weights(self, module):
         """Initialize the weights."""
-        raise NotImplementedError("DO IT ONCE!")
+        logger.warning("INIT IS MESSED UP, GO UNMESS IT!")
         if isinstance(module, nn.Linear):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
