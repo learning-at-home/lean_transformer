@@ -1,6 +1,6 @@
 import math
 from functools import lru_cache, partial
-from typing import Optional
+from typing import Optional, Tuple
 
 from torch import nn as nn
 from transformers import PretrainedConfig
@@ -146,10 +146,10 @@ class LeanTransformer(nn.Module):
                 attention=self._make_attention(config), ffn=self._make_ffn(config)
         )) for _ in range(config.num_inner_groups)]))) for _ in range(config.num_hidden_groups)])
         self.post_layer_norm = nn.LayerNorm(config.hidden_size, config.layer_norm_eps)
-        self._sequential: Optional[nn.Module] = None
+        self._sequential: Tuple[nn.Module, ...] = ()
 
     def _get_sequential(self):
-        if self._sequential is None:
+        if not self._sequential:
             sequence = []
             for i in range(self.config.num_hidden_layers):
                 group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
@@ -157,8 +157,8 @@ class LeanTransformer(nn.Module):
                     sequence.append(ActiveKwargs(layer.attention, ("attention_mask",), use_first_output=True))
                     sequence.append(ActiveKwargs(layer.ffn))
             sequential_cls = ReversibleWithKwargs if self.config.reversible else SequentialWithKwargs
-            self._sequential = lambda: sequential_cls(*sequence)
-        return self._sequential()
+            self._sequential = (sequential_cls(*sequence), )
+        return self._sequential[0]
 
     def _make_attention(self, config: LeanTransformerConfig):
         return LeanSelfAttention(
