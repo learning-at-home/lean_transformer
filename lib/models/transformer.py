@@ -20,8 +20,6 @@ class LeanTransformerConfig(PretrainedConfig):
 
     def __init__(
         self,
-        vocab_size: int = 30000,
-        embedding_size: int = 128,
         hidden_size: int = 4096,
         num_hidden_layers: int = 4096,
         num_hidden_groups: Optional[int] = None,
@@ -44,8 +42,6 @@ class LeanTransformerConfig(PretrainedConfig):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.vocab_size = vocab_size
-        self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
 
@@ -146,7 +142,6 @@ class LeanTransformer(nn.Module):
     def __init__(self, config: LeanTransformerConfig):
         super().__init__()
         self.config = config
-        self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
         self.layer_groups = nn.ModuleList([nn.ModuleDict(dict(layers=nn.ModuleList([nn.ModuleDict(dict(
                 attention=self._make_attention(config), ffn=self._make_ffn(config)
         )) for _ in range(config.num_inner_groups)]))) for _ in range(config.num_hidden_groups)])
@@ -195,7 +190,6 @@ class LeanTransformer(nn.Module):
         )
 
     def forward(self, hidden_states, attention_mask=None):
-        hidden_states = self.embedding_hidden_mapping_in(hidden_states)
         hidden_states = self._get_sequential()(hidden_states, attention_mask=attention_mask)
         return BaseModelOutput(self.post_layer_norm(hidden_states))
 

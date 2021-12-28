@@ -43,6 +43,8 @@ class LeanAlbertConfig(LeanTransformerConfig):
     def __init__(
         self,
         *args,
+        vocab_size: int = 30000,
+        embedding_size: int = 128,
         classifier_dropout_prob: float = 0.1,
         type_vocab_size: int = 2,
         pad_token_id: int = 0,
@@ -58,6 +60,8 @@ class LeanAlbertConfig(LeanTransformerConfig):
             type_vocab_size=type_vocab_size,
             **kwargs
         )
+        self.vocab_size = vocab_size
+        self.embedding_size = embedding_size
         self.classifier_dropout_prob = classifier_dropout_prob
         self.type_vocab_size = type_vocab_size
 
@@ -76,6 +80,8 @@ class LeanAlbertEmbeddings(nn.Module):
 
         self.layernorm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        if config.embedding_size != config.hidden_size:
+            self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
 
         if self.position_embeddings is not None:
             # position_ids (1, len position emb) is contiguous in memory and exported when serialized
@@ -110,6 +116,8 @@ class LeanAlbertEmbeddings(nn.Module):
 
         embeddings = self.layernorm(embeddings)
         embeddings = self.dropout(embeddings)
+        if hasattr(self, "embedding_hidden_mapping_in"):
+            embeddings = self.embedding_hidden_mapping_in(embeddings)
         return embeddings
 
 
