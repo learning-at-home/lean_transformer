@@ -22,7 +22,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.albert.modeling_albert import AlbertForPreTrainingOutput
 from transformers.utils import logging
 
-from lib.models.transformer import LeanTransformer, LeanTransformerConfig
+from lib.models.transformer import LeanTransformer, LeanTransformerConfig, _init_weights
 from lib.modules.sequence import GradientCheckpointingMixin
 
 logger = logging.get_logger(__name__)
@@ -124,7 +124,6 @@ class LeanAlbertModel(GradientCheckpointingMixin, PreTrainedModel):
         self.config = config
         self.embeddings = LeanAlbertEmbeddings(config)
         self.encoder = LeanTransformer(config)
-        self.encoder.init_weights()
 
         if add_pooling_layer:
             self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
@@ -140,6 +139,9 @@ class LeanAlbertModel(GradientCheckpointingMixin, PreTrainedModel):
 
     def set_input_embeddings(self, value):
         self.embeddings.word_embeddings = value
+
+    def _init_weights(self, module: nn.Module):
+        return _init_weights(module, initializer_range=self.config.initializer_range)
 
     def forward(
         self,
@@ -263,6 +265,9 @@ class LeanAlbertForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
 
     def set_output_embeddings(self, new_embeddings):
         self.predictions.decoder = new_embeddings
+
+    def _init_weights(self, module: nn.Module):
+        return _init_weights(module, initializer_range=self.config.initializer_range)
 
     def forward(
         self,
