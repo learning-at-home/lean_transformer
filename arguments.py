@@ -10,7 +10,7 @@ class CollaborativeArguments:
     """Configuration for CollaborativeOptimizer and its internals"""
 
     target_batch_size: int = field(
-        default=4096,
+        default=16384,
         metadata={"help": "Perform optimizer step after all peers collectively accumulate this many samples"},
     )
     matchmaking_time: float = field(
@@ -53,7 +53,7 @@ class HFTrainerArguments(TrainingArguments):
     per_device_eval_batch_size: int = 1
     gradient_accumulation_steps: int = 1
 
-    learning_rate: float = 0.001
+    learning_rate: float = 0.0025
     total_steps: int = 31250  # total number of collaborative optimizer updates, used for learning rate schedule
     warmup_steps: int = 3125
     min_learning_rate: float = 1e-5  # learning rate after total_steps have passed
@@ -69,9 +69,9 @@ class HFTrainerArguments(TrainingArguments):
     fp16: bool = False  # can be enabled depending on the device
 
     max_sequence_length: int = 2048
-    sequence_length_warmup_steps: int = 15_000
-    initial_sequence_length: Optional[int] = 128  # used only if warmup > 0, default = pad_to_multiple_of
-    pad_to_multiple_of: int = 128  # sequence length will be divisible by this value
+    sequence_length_warmup_steps: int = 8_000
+    initial_sequence_length: Optional[int] = 64  # used only if warmup > 0, default = pad_to_multiple_of
+    pad_to_multiple_of: int = 64  # sequence length will be divisible by this value
 
     output_dir: str = "outputs"
     logging_steps: int = 100

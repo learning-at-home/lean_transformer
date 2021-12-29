@@ -1,4 +1,5 @@
 import ctypes
+import math
 import os
 from dataclasses import asdict
 from pathlib import Path
@@ -153,9 +154,8 @@ class CausalLMTask(TrainingTaskBase):
         def lr_lambda(current_step: int):
             if current_step < num_warmup_steps:
                 return float(current_step) / float(max(1, num_warmup_steps))
-            decaying = float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
-            return max(min_learning_rate, decaying)
-
+            decay_ratio = min(1.0, (current_step - num_warmup_steps) / (num_training_steps - num_warmup_steps))
+            return max(min_learning_rate, 0.5 * (math.cos(math.pi * decay_ratio) + 1.0))
         return LambdaLR(optimizer, lr_lambda)
 
     @property
