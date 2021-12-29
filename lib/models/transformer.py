@@ -191,7 +191,7 @@ class LeanTransformer(nn.Module):
             dense_qkv=config.get_linear_layer("self_attn_qkv", config.hidden_size, config.hidden_size * 3, bias=True),
             dense_out=config.get_linear_layer("self_attn_out", config.hidden_size, config.hidden_size, bias=True),
             sandwich_norm=config.sandwich_norm,
-            residual=not config.reversible,
+            residual=not config.reversible, use_checkpoint=not config.reversible
         )
 
     def _make_ffn(self, config: LeanTransformerConfig):
@@ -223,4 +223,10 @@ class GradientCheckpointingMixin:
 
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
         if isinstance(module, LeanTransformer):
-            module._get_sequential().gradient_checkpointing = value
+            sequential = module._get_sequential()
+            assert not value or isinstance(sequential, SequentialWithKwargs), "Reversible does not need checkpoints"
+            sequential.gradient_checkpointing = value
+            for module in sequential:
+                if isinstance(module, LeanSelfAttention):
+                    # disable local checkpoints if checkpointing globally -- and vice versa
+                    module.use_checkpoint = not value
