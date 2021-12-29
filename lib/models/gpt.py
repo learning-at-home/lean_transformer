@@ -137,7 +137,7 @@ class TiedMLMHead(nn.Module):
 
 class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
     config_class = LeanGPTConfig
-    base_model_prefix = "lean_albert"
+    base_model_prefix = "lean_gpt"
 
     def __init__(self, config: config_class):
         PreTrainedModel.__init__(self, config)
@@ -149,10 +149,10 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         self.init_weights()
 
     def get_input_embeddings(self):
-        return self.albert.embeddings.word_embeddings
+        return self.embeddings.word_embeddings
 
     def set_input_embeddings(self, new_embeddings: nn.Module):
-        self.transformer.embeddings.word_embeddings = new_embeddings
+        self.embeddings.word_embeddings = new_embeddings
 
     def _init_weights(self, module: nn.Module):
         return self.config.init_weights(module)
