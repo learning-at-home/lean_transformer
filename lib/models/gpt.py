@@ -156,7 +156,8 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         old_bias = self.lm_head.logits_bias
         intersection_size = min(len(old_bias), new_embeddings.num_embeddings)
         self.lm_head.logits_bias = nn.Parameter(torch.zeros(new_embeddings.num_embeddings))
-        self.lm_head.logits_bias[:intersection_size] = old_bias[:intersection_size]
+        with torch.no_grad():
+            self.lm_head.logits_bias[:intersection_size] = old_bias[:intersection_size]
 
     def _init_weights(self, module: nn.Module):
         return self.config.init_weights(module)
