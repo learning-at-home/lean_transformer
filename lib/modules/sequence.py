@@ -1,4 +1,4 @@
-import contextlib
+from typing import Sequence
 import copy
 import typing
 
@@ -6,22 +6,6 @@ import torch
 from torch import nn as nn
 from torch.utils.checkpoint import checkpoint
 from revlib import MemoryModes, ReversibleModuleCache, replace_grad, ReversibleModule
-
-CURRENT_KWARGS = None
-
-
-@contextlib.contextmanager
-def using_kwargs(kwargs):
-    global CURRENT_KWARGS
-    old, CURRENT_KWARGS = CURRENT_KWARGS, kwargs
-    try:
-        yield kwargs
-    finally:
-        CURRENT_KWARGS = old
-
-
-def get_kwargs(active_keys):
-    return {} if CURRENT_KWARGS is None else {k: v for k, v in CURRENT_KWARGS.items() if k in active_keys}
 
 
 class ActiveKwargs(nn.Module):
@@ -31,8 +15,9 @@ class ActiveKwargs(nn.Module):
         super().__init__()
         self.module, self.active_keys, self.use_first_output = module, active_keys, use_first_output
 
-    def forward(self, input: torch.Tensor):
-        output = self.module(input, **get_kwargs(self.active_keys))
+    def forward(self, input: torch.Tensor, extra_names: Sequence[str], *extra_args):
+        kwargs = {key: value for key, value in zip(extra_names, extra_args) if key in self.active_keys}
+        output = self.module(input, **kwargs)
         if self.use_first_output and not isinstance(output, torch.Tensor):
             output = output[0]
         return output
@@ -46,12 +31,12 @@ class SequentialWithKwargs(nn.Sequential):
         self.gradient_checkpointing = False
 
     def forward(self, input: torch.Tensor, **kwargs):
-        with using_kwargs(kwargs):
-            for module in self:
-                if self.gradient_checkpointing and torch.is_grad_enabled():
-                    input = checkpoint(module, input)
-                else:
-                    input = module(input)
+        extra_names, extra_args = zip(*kwargs.items())
+        for module in self:
+            if self.gradient_checkpointing and torch.is_grad_enabled():
+                input = checkpoint(module, input, extra_names, *extra_args)
+            else:
+                input = module(input, extra_names, *extra_args)
         return input
 
 
