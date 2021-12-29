@@ -153,12 +153,12 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
     def set_input_embeddings(self, new_embeddings: nn.Embedding):
         assert isinstance(new_embeddings, nn.Embedding)
         self.embeddings.word_embeddings = new_embeddings
-        old_bias = self.lm_head.logits_bias
-        intersection_size = min(len(old_bias), new_embeddings.num_embeddings)
-        self.lm_head.logits_bias = nn.Parameter(torch.zeros(new_embeddings.num_embeddings, dtype=old_bias.dtype,
-                                                            device=old_bias.device, layout=old_bias.layout))
+        prev_bias = self.lm_head.logits_bias
+        intersection_size = min(len(prev_bias), new_embeddings.num_embeddings)
+        self.lm_head.logits_bias = nn.Parameter(torch.zeros(new_embeddings.num_embeddings, dtype=prev_bias.dtype,
+                                                            device=prev_bias.device, layout=prev_bias.layout))
         with torch.no_grad():
-            self.lm_head.logits_bias[:intersection_size] = old_bias[:intersection_size]
+            self.lm_head.logits_bias[:intersection_size] = prev_bias[:intersection_size]
 
     def _init_weights(self, module: nn.Module):
         return self.config.init_weights(module)
