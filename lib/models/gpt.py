@@ -129,9 +129,7 @@ class TiedMLMHead(nn.Module):
 
         hidden_states = self.activation(hidden_states)
         hidden_states = self.layer_norm(hidden_states)
-
-        weight = self.embeddings.word_embeddings.weight.t()
-        logits = F.linear(input=hidden_states, weight=weight, bias=self.logits_bias)
+        logits = F.linear(input=hidden_states, weight=self.embeddings.word_embeddings.weight, bias=self.logits_bias)
         return logits
 
 
