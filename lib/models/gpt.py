@@ -204,12 +204,15 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
         extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
-        print(extended_attention_mask.shape)
+
+        causal_attention_mask = torch.ones(seq_length, seq_length, dtype=self.dtype, device=device)
+        causal_attention_mask = torch.tril(causal_attention_mask).view(1, 1, seq_length, seq_length)
+        causal_attention_mask = (1.0 - causal_attention_mask) * -10000.0
 
         embedding_output = self.embeddings(
             input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         )
-        transformer_outputs = self.transformer(embedding_output, extended_attention_mask)
+        transformer_outputs = self.transformer(embedding_output, (extended_attention_mask, causal_attention_mask))
         lm_logits = self.lm_head(transformer_outputs.last_hidden_state)
 
         loss = None
