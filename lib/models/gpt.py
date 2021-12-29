@@ -48,6 +48,7 @@ class LeanGPTConfig(LeanTransformerConfig):
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
             type_vocab_size=type_vocab_size,
+            tie_word_embeddings=True,
             **kwargs
         )
         self.vocab_size = vocab_size
@@ -149,8 +150,13 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
     def get_input_embeddings(self):
         return self.embeddings.word_embeddings
 
-    def set_input_embeddings(self, new_embeddings: nn.Module):
+    def set_input_embeddings(self, new_embeddings: nn.Embedding):
+        assert isinstance(new_embeddings, nn.Embedding)
         self.embeddings.word_embeddings = new_embeddings
+        old_bias = self.lm_head.logits_bias
+        intersection_size = min(len(old_bias), new_embeddings.num_embeddings)
+        self.lm_head.logits_bias = nn.Parameter(torch.zeros(new_embeddings.num_embeddings))
+        self.lm_head.logits_bias[:intersection_size] = old_bias[:intersection_size]
 
     def _init_weights(self, module: nn.Module):
         return self.config.init_weights(module)
