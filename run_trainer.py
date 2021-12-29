@@ -13,7 +13,7 @@ import callback
 import utils
 from arguments import CollaborativeArguments, HFTrainerArguments, TrainingPeerArguments
 from lib.training.hf_trainer import CollaborativeHFTrainer
-from tasks.mlm.task import MLMTrainingTask
+from tasks.gpt.task import CausalLMTask
 
 use_hivemind_log_handler("in_root_logger")
 logger = get_logger()
@@ -28,7 +28,7 @@ def main():
         logger.warning("Specify at least one network endpoint in initial peers OR let others join your peer.")
 
     utils.setup_logging(trainer_args)
-    task = MLMTrainingTask(training_peer_args, trainer_args, collab_args)
+    task = CausalLMTask(training_peer_args, trainer_args, collab_args)
     model = task.model.to(trainer_args.device)
 
     collaborative_callback = callback.CollaborativeCallback(task, training_peer_args)

@@ -13,7 +13,7 @@ from transformers import HfArgumentParser
 
 import utils
 from arguments import AuxiliaryPeerArguments, CollaborativeArguments, HFTrainerArguments
-from tasks.mlm.task import MLMTrainingTask
+from tasks.gpt.task import CausalLMTask
 
 transformers.utils.logging.set_verbosity_warning()
 use_hivemind_log_handler("in_root_logger")
@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 
 class CheckpointHandler:
-    def __init__(self, task: MLMTrainingTask, peer_args: AuxiliaryPeerArguments):
+    def __init__(self, task: CausalLMTask, peer_args: AuxiliaryPeerArguments):
         self.task, self.peer_args = task, peer_args
         self.save_checkpoint_epoch_interval = peer_args.save_checkpoint_epoch_interval
         self.prefix = peer_args.run_id
