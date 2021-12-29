@@ -33,8 +33,8 @@ class ActiveKwargs(nn.Module):
         super().__init__()
         self.module, self.active_keys, self.use_first_output = module, active_keys, use_first_output
 
-    @contextlib.contextmanager
     @classmethod
+    @contextlib.contextmanager
     def using_kwargs(cls, kwargs, grad_enabled: bool):
         assert cls.CURRENT_KWARGS is None, "nesting is not supported"
         if cls.KWARGS_FOR_BACKWARD:
