@@ -1,3 +1,7 @@
+"""
+A module that implements sequential model type with optional keyword arguments.
+When using gradient checkpoints or reversible sequential, keyword arguments should NOT require grad.
+"""
 import contextlib
 import copy
 import typing
@@ -6,40 +10,57 @@ import torch
 from torch import nn as nn
 from torch.utils.checkpoint import checkpoint
 from revlib import MemoryModes, ReversibleModuleCache, replace_grad, ReversibleModule
-
-CURRENT_KWARGS = None
-
-
-@contextlib.contextmanager
-def using_kwargs(kwargs):
-    global CURRENT_KWARGS
-    old, CURRENT_KWARGS = CURRENT_KWARGS, kwargs
-    try:
-        yield kwargs
-    finally:
-        CURRENT_KWARGS = old
+from hivemind.utils.logging import get_logger
 
 
-def is_forward_pass():
-    return CURRENT_KWARGS is not None
-
-
-def get_kwargs(active_keys):
-    return {k: v for k, v in CURRENT_KWARGS.items() if k in active_keys} if is_forward_pass() else None
+logger = get_logger(__file__)
 
 
 class ActiveKwargs(nn.Module):
-    """Adapts a self-attention or ffn module to be a part of torch.nn.Sequential"""
+    """
+    A module with kwargs that is compatible with sequential
+    Usage: ony use this as a part of SequentialWithKwargs or ReversibleWithKwargs
+
+    What happens internally:
+    - during forward pass, enter ActiveKwargs.using_kwargs(**kwargs) context
+    - call each ActiveKwargs module at most once
+    - during backward, it will reuse previously recorded kwargs
+
+    """
+    CURRENT_KWARGS, KWARGS_FOR_BACKWARD, GRAD_ENABLED = None, dict(), True
 
     def __init__(self, module: nn.Module, active_keys=(), use_first_output: bool = False):
         super().__init__()
         self.module, self.active_keys, self.use_first_output = module, active_keys, use_first_output
-        self._latest_kwargs = None
+
+    @contextlib.contextmanager
+    @classmethod
+    def using_kwargs(cls, kwargs, grad_enabled: bool):
+        assert cls.CURRENT_KWARGS is None, "nesting is not supported"
+        if cls.KWARGS_FOR_BACKWARD:
+            logger.warning(
+                "Not all kwargs from forward pass were used in backward pass. This is expected if you ran inference"
+                " without zero_grad or forgot to run backward. Otherwise something terrible just happened.")
+
+        cls.CURRENT_KWARGS, cls.KWARGS_FOR_BACKWARD, cls.GRAD_ENABLED = kwargs, dict(), grad_enabled
+        try:
+            yield
+        finally:
+            cls.CURRENT_KWARGS = None
+
+    def get_kwargs(self):
+        if id(self) in self.KWARGS_FOR_BACKWARD:
+            assert self.CURRENT_KWARGS is None, "this code should only run during backward pass and outside the context"
+            return self.KWARGS_FOR_BACKWARD.pop(id(self))
+        else:
+            active_kwargs = {k: v for k, v in self.CURRENT_KWARGS.items() if k in self.active_keys}
+            assert id(self) not in self.KWARGS_FOR_BACKWARD, "Trying to run the same module twice"
+            if self.GRAD_ENABLED:
+                self.KWARGS_FOR_BACKWARD[id(self)] = active_kwargs
+            return active_kwargs
 
     def forward(self, input: torch.Tensor):
-        if is_forward_pass():
-            self._latest_kwargs = get_kwargs(self.active_keys)
-        output = self.module(input, **self._latest_kwargs)
+        output = self.module(input, **self.get_kwargs())
         if self.use_first_output and not isinstance(output, torch.Tensor):
             output = output[0]
         return output
@@ -53,7 +74,7 @@ class SequentialWithKwargs(nn.Sequential):
         self.gradient_checkpointing = False
 
     def forward(self, input: torch.Tensor, **kwargs):
-        with using_kwargs(kwargs):
+        with ActiveKwargs.using_kwargs(kwargs, torch.is_grad_enabled()):
             for module in self:
                 if self.gradient_checkpointing and torch.is_grad_enabled():
                     input = checkpoint(module, input)
@@ -84,7 +105,7 @@ class ReversibleWithKwargs(torch.nn.Module):
         self.m = memory_mode
 
     def forward(self, inp0: torch.Tensor, **kwargs) -> torch.Tensor:
-        with using_kwargs(kwargs):
+        with ActiveKwargs.using_kwargs(kwargs, torch.is_grad_enabled()):
             inp0 = inp0.to(torch.float32)  # enforce upcasting residuals to fp32
             inp1 = zeros = torch.zeros_like(inp0)
             out0, out1 = self.replace_grad(*self.stem((inp0, inp1, zeros, zeros)))
