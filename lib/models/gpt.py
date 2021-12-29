@@ -222,6 +222,7 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
             shift_labels = torch.cat([labels[..., 1:], ignored_labels], dim=1)
             loss = F.cross_entropy(lm_logits.view(-1, lm_logits.shape[-1]), shift_labels.view(-1),
                                    reduction='mean', ignore_index=-100)
+            # note: masked labels have index -100 so they will be ignored when computing cross-entropy
 
         if not return_dict:
             output = (lm_logits,) + transformer_outputs[1:]
