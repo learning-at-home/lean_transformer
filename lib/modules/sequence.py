@@ -1,4 +1,4 @@
-from typing import Sequence
+import contextlib
 import copy
 import typing
 
@@ -7,6 +7,26 @@ from torch import nn as nn
 from torch.utils.checkpoint import checkpoint
 from revlib import MemoryModes, ReversibleModuleCache, replace_grad, ReversibleModule
 
+CURRENT_KWARGS = None
+
+
+@contextlib.contextmanager
+def using_kwargs(kwargs):
+    global CURRENT_KWARGS
+    old, CURRENT_KWARGS = CURRENT_KWARGS, kwargs
+    try:
+        yield kwargs
+    finally:
+        CURRENT_KWARGS = old
+
+
+def is_forward_pass():
+    return CURRENT_KWARGS is not None
+
+
+def get_kwargs(active_keys):
+    return {k: v for k, v in CURRENT_KWARGS.items() if k in active_keys} if is_forward_pass() else None
+
 
 class ActiveKwargs(nn.Module):
     """Adapts a self-attention or ffn module to be a part of torch.nn.Sequential"""
@@ -14,10 +34,12 @@ class ActiveKwargs(nn.Module):
     def __init__(self, module: nn.Module, active_keys=(), use_first_output: bool = False):
         super().__init__()
         self.module, self.active_keys, self.use_first_output = module, active_keys, use_first_output
+        self._latest_kwargs = None
 
-    def forward(self, input: torch.Tensor, extra_names: Sequence[str], *extra_args):
-        kwargs = {key: value for key, value in zip(extra_names, extra_args) if key in self.active_keys}
-        output = self.module(input, **kwargs)
+    def forward(self, input: torch.Tensor):
+        if is_forward_pass():
+            self._latest_kwargs = get_kwargs(self.active_keys)
+        output = self.module(input, **self._latest_kwargs)
         if self.use_first_output and not isinstance(output, torch.Tensor):
             output = output[0]
         return output
@@ -31,12 +53,12 @@ class SequentialWithKwargs(nn.Sequential):
         self.gradient_checkpointing = False
 
     def forward(self, input: torch.Tensor, **kwargs):
-        extra_names, extra_args = zip(*kwargs.items())
-        for module in self:
-            if self.gradient_checkpointing and torch.is_grad_enabled():
-                input = checkpoint(module, input, extra_names, *extra_args)
-            else:
-                input = module(input, extra_names, *extra_args)
+        with using_kwargs(kwargs):
+            for module in self:
+                if self.gradient_checkpointing and torch.is_grad_enabled():
+                    input = checkpoint(module, input)
+                else:
+                    input = module(input)
         return input
 
 
@@ -67,3 +89,5 @@ class ReversibleWithKwargs(torch.nn.Module):
             inp1 = zeros = torch.zeros_like(inp0)
             out0, out1 = self.replace_grad(*self.stem((inp0, inp1, zeros, zeros)))
             return out0 if len(self.stem) % 2 == 0 else out1  # return the last updated out
+
+
