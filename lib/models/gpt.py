@@ -204,7 +204,7 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
             input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         )
         transformer_outputs = self.transformer(embedding_output, extended_attention_mask)
-        lm_logits = self.lm_head(transformer_outputs.hidden_states)
+        lm_logits = self.lm_head(transformer_outputs.last_hidden_state)
 
         loss = None
         if labels is not None:

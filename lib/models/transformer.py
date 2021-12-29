@@ -212,7 +212,7 @@ class LeanTransformer(nn.Module):
 
     def forward(self, hidden_states, attention_mask=None):
         hidden_states = self._get_sequential()(hidden_states, attention_mask=attention_mask)
-        return BaseModelOutput(self.post_layer_norm(hidden_states))
+        return BaseModelOutput(last_hidden_state=self.post_layer_norm(hidden_states))
 
     def init_weights(self):
         self.apply(self.config.init_weights)
