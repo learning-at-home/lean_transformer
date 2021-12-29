@@ -64,8 +64,7 @@ def make_training_dataset(
     text_col = b"Text"
 
     def extract_training_columns(batch):
-        texts = [bytes.decode(row, errors="ignore") for row in batch[text_col]]
-        return dict(text=texts)
+        return dict(text=[bytes.decode(row, errors="ignore") for row in batch[text_col]])
 
     dataset = IterableDataset(dataset).map(extract_training_columns, batched=True, batch_size=preprocessing_batch_size)
 
