@@ -91,9 +91,11 @@ class SimpleAttentionCore(nn.Module):
         attention_scores = attention_scores / math.sqrt(query.shape[-1])
 
         if attention_mask is not None:
-            print('!!', attention_mask)
+            if isinstance(attention_mask, torch.Tensor):
+                attention_mask = (attention_mask,)
             # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-            attention_scores = attention_scores + attention_mask
+            for mask_i in attention_mask:
+                attention_scores += mask_i
 
         # Normalize the attention scores to probabilities.
         attention_probs = torch.softmax(attention_scores, dim=-1)
