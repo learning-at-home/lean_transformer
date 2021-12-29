@@ -74,7 +74,7 @@ class SequentialWithKwargs(nn.Sequential):
         self.gradient_checkpointing = False
 
     def forward(self, input: torch.Tensor, **kwargs):
-        with ActiveKwargs.using_kwargs(kwargs, torch.is_grad_enabled()):
+        with ActiveKwargs.using_kwargs(kwargs, torch.is_grad_enabled() and input.requires_grad):
             for module in self:
                 if self.gradient_checkpointing and torch.is_grad_enabled():
                     input = checkpoint(module, input)
@@ -104,11 +104,16 @@ class ReversibleWithKwargs(torch.nn.Module):
                                           for i, m in enumerate(modules)])
         self.m = memory_mode
 
-    def forward(self, inp0: torch.Tensor, **kwargs) -> torch.Tensor:
-        with ActiveKwargs.using_kwargs(kwargs, torch.is_grad_enabled()):
-            inp0 = inp0.to(torch.float32)  # enforce upcasting residuals to fp32
-            inp1 = zeros = torch.zeros_like(inp0)
+    def forward(self, input: torch.Tensor, **kwargs) -> torch.Tensor:
+        with ActiveKwargs.using_kwargs(kwargs, torch.is_grad_enabled() and input.requires_grad):
+            inp1 = inp0 = input.to(torch.float32)  # enforce upcasting residuals to fp32
+            zeros = torch.zeros_like(inp0)
             out0, out1 = self.replace_grad(*self.stem((inp0, inp1, zeros, zeros)))
-            return out0 if len(self.stem) % 2 == 0 else out1  # return the last updated out
+            # note: we initialize both sides of reversible sequence with the same input (e.g. embeddings)
+            # and combine them to get something resembling a normal residual sum. More specifically,
+            # out1 = input + f1 + f2 + ... + fn  -- a sum of all odd modules plus inputs
+            # out0 = input + g1 + g2 + ... + gn  -- a sum of all even modules plus inputs
+            # hence, out0 + out1 - inp1 = input + f1 + g1 + g2 + g2 + ... + fn + gn
+            return out0 + out1 - inp1
 
 
