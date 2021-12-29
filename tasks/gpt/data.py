@@ -6,7 +6,7 @@ import torch.utils.data
 from datasets import IterableDataset
 from transformers import GPT2TokenizerFast
 
-from yt_streaming import YTDataset
+from .yt_streaming import YTDataset
 
 from collections import defaultdict
 from datasets import disable_progress_bar
