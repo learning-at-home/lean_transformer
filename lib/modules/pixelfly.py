@@ -24,9 +24,8 @@ def get_butterfly_indices(
     :param stretch: by default, non-square matrices will have stretched butterfly patterns,
       otherwise the square pattern will be repeated a given number of times
     """
-    assert (
-        out_features % in_features == 0 or in_features % out_features == 0
-    ), "if matrix is not square, the longer dimension must be a multiple of the shorter dimension"
+    assert out_features % in_features == 0 or in_features % out_features == 0, \
+        "if matrix is not square, the longer dimension must be a multiple of the shorter dimension"
     assert out_features % block_size == 0 and in_features % block_size == 0
     log_n = int(math.log2(butterfly_size))
     n_factors = log_n if n_factors is None else n_factors
@@ -131,7 +130,6 @@ def butterfly_matmul(input: torch.Tensor, weight: torch.Tensor, butterfly_flat_i
     :returns: tensor [*batch_dims, out_features]
     """
     assert input.shape[-1] == weight.shape[0]
-    assert weight.shape[1] == butterfly_flat_indices.shape[1]
     in_features, active_blocks_per_input, block_size = weight.shape
     num_input_blocks = in_features // block_size
     batch_dims = input.shape[:-1]
