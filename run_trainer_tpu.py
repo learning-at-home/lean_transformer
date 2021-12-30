@@ -15,7 +15,7 @@ from tasks.mlm.task import MLMTrainingTask
 
 use_hivemind_log_handler("in_root_logger")
 logger = get_logger()
-
+torch.set_num_threads(min(4, torch.get_num_threads()))  # avoid quadratic number of threads
 transformers.training_args.is_torch_tpu_available = lambda: False  # disable builtin TPU support to use custom code
 
 
