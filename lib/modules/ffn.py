@@ -48,7 +48,7 @@ class LeanFFN(nn.Module):
             input_2d, input.shape[-1:], self.layer_norm.weight, self.layer_norm.bias, self.layer_norm.eps
         )
         pre_activation = self.dense_i2h(input_ln)
-        hid_act = self._apply_activation(pre_activation, self.activation, self.dense_h2o.weight.shape[1])
+        hid_act = self._apply_activation(pre_activation, self.activation, self.dense_h2o.in_features)
 
         out = self.dense_h2o(hid_act)
         if self.sandwich_norm:
