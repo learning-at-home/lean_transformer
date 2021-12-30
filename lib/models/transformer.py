@@ -143,7 +143,7 @@ class LeanTransformerConfig(PretrainedConfig):
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, SharedMatrix):
-            module.matrix.data.normal_(mean=0.0, std=self.initializer_range)
+            module.weight.data.normal_(mean=0.0, std=self.initializer_range)
         elif isinstance(module, nn.Linear):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
