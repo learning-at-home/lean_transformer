@@ -43,38 +43,20 @@ class LeanFFN(nn.Module):
         self.residual = residual
 
     def forward(self, input):
-        i2h_adapter_first = i2h_adapter_second = h2o_adapter_first = h2o_adapter_second = None
-        if isinstance(self.dense_i2h, AdaptedLinear):
-            i2h_adapter_first, i2h_adapter_second = self.dense_i2h.adapter_first, self.dense_i2h.adapter_second
-        if isinstance(self.dense_h2o, AdaptedLinear):
-            h2o_adapter_first, h2o_adapter_second = self.dense_h2o.adapter_first, self.dense_h2o.adapter_second
-
         input_2d = input.view(-1, input.shape[-1])
         input_ln = F.layer_norm(
             input_2d, input.shape[-1:], self.layer_norm.weight, self.layer_norm.bias, self.layer_norm.eps
         )
-        pre_activation = self.linear_forward(
-            input_ln, self.dense_i2h.weight, self.dense_i2h.bias, i2h_adapter_first, i2h_adapter_second
-        )
+        pre_activation = self.dense_i2h(input_ln)
         hid_act = self._apply_activation(pre_activation, self.activation, self.dense_h2o.weight.shape[1])
 
-        out = self.linear_forward(
-            hid_act, self.dense_h2o.weight, self.dense_h2o.bias, h2o_adapter_first, h2o_adapter_second
-        )
+        out = self.dense_h2o(hid_act)
         if self.sandwich_norm:
             out = self.sandwich_norm(out)
         out = F.dropout(out, self.dropout, self.training)
         if self.residual:
             out = out.add(input_2d)
         return out.view(*input.shape)
-
-    @staticmethod
-    def linear_forward(input, weight, bias, adapter_first, adapter_second):
-        output = F.linear(input, weight, bias)
-        if adapter_first is not None:
-            adapter_hid = F.linear(input, adapter_first)
-            output = F.linear(adapter_hid, adapter_second, output)
-        return output
 
     @staticmethod
     def _apply_activation(pre_activation: torch.Tensor, activation: callable, hid_size: int):
