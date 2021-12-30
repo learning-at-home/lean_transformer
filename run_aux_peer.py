@@ -18,7 +18,7 @@ from tasks.gpt.task import CausalLMTask
 transformers.utils.logging.set_verbosity_warning()
 use_hivemind_log_handler("in_root_logger")
 logger = get_logger(__name__)
-torch.set_num_threads(min(4, torch.get_num_threads()))  # avoid quadratic number of threads
+torch.set_num_threads(1)  # avoid quadratic number of threads
 
 
 class CheckpointHandler:

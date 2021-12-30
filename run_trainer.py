@@ -18,7 +18,7 @@ from tasks.gpt.task import CausalLMTask
 
 use_hivemind_log_handler("in_root_logger")
 logger = get_logger()
-torch.set_num_threads(min(4, torch.get_num_threads()))  # avoid quadratic number of threads
+torch.set_num_threads(1)  # avoid quadratic number of threads
 
 
 def main():
