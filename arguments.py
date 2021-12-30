@@ -10,7 +10,7 @@ class CollaborativeArguments:
     """Configuration for CollaborativeOptimizer and its internals"""
 
     target_batch_size: int = field(
-        default=32768,
+        default=16384,
         metadata={"help": "Perform optimizer step after all peers collectively accumulate this many samples"},
     )
     matchmaking_time: float = field(
