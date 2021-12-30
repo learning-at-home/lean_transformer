@@ -69,8 +69,8 @@ class HFTrainerArguments(TrainingArguments):
     fp16: bool = False  # can be enabled depending on the device
 
     max_sequence_length: int = 2048
-    initial_sequence_length: Optional[int] = 512  # used only if warmup > 0, default = pad_to_multiple_of
-    sequence_length_warmup_steps: int = 8_000
+    initial_sequence_length: Optional[int] = 256  # used only if warmup > 0, default = pad_to_multiple_of
+    sequence_length_warmup_steps: int = 12_000
     pad_to_multiple_of: int = 128  # sequence length will be divisible by this value
 
     output_dir: str = "outputs"
