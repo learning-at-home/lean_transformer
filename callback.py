@@ -7,7 +7,7 @@ import transformers
 from transformers import TrainingArguments
 
 from arguments import TrainingPeerArguments
-from tasks.mlm.task import MLMTrainingTask
+from tasks.register import TrainingTaskBase
 from utils import LocalMetrics, logger
 
 
@@ -17,7 +17,7 @@ class CollaborativeCallback(transformers.TrainerCallback):
     In case of a catastrophic failure, it can also revert training to a backup
     """
 
-    def __init__(self, task: MLMTrainingTask, args: TrainingPeerArguments):
+    def __init__(self, task: TrainingTaskBase, args: TrainingPeerArguments):
         super().__init__()
         self.task = task
         self.dht, self.collaborative_optimizer = task.dht, task.collaborative_optimizer

@@ -82,7 +82,7 @@ class CheckpointHandler:
 
 
 def assist_averaging_in_background(
-    lock: threading.Lock, task: MLMTrainingTask, peer_args: AuxiliaryPeerArguments, finished: threading.Event
+    lock: threading.Lock, task: CausalLMTask, peer_args: AuxiliaryPeerArguments, finished: threading.Event
 ):
     while not finished.is_set():
         try:
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     peer_args, trainer_args, collab_args = parser.parse_args_into_dataclasses()
     finished, lock = threading.Event(), threading.Lock()
 
-    task = MLMTrainingTask(peer_args, trainer_args, collab_args)
+    task = CausalLMTask(peer_args, trainer_args, collab_args)
     dht, collaborative_optimizer = task.dht, task.collaborative_optimizer
 
     if peer_args.wandb_project is not None:
