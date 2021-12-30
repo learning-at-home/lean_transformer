@@ -6,12 +6,13 @@ import torch
 import torch.nn.functional as F
 import einops
 
+
 @functools.lru_cache
 def get_butterfly_indices(
     out_features: int,
     in_features: int,
     block_size: int = 256,
-    butterfly_size: int = 64,
+    butterfly_size: int = 256,
     n_factors: Optional[int] = None,
     stretch: bool = False,
 ) -> torch.IntTensor:
@@ -23,7 +24,6 @@ def get_butterfly_indices(
     :param stretch: by default, non-square matrices will have stretched butterfly patterns,
       otherwise the square pattern will be repeated a given number of times
     """
-    raise NotImplementedError("THIS IS AN OLD VERSION PLEASE REPLACE WITH THE NEW ONE!")
     assert (
         out_features % in_features == 0 or in_features % out_features == 0
     ), "if matrix is not square, the longer dimension must be a multiple of the shorter dimension"

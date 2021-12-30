@@ -9,22 +9,33 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
+from lib.modules.pixelfly import get_butterfly_indices, butterfly_matmul
+
 
 class SharedMatrix(nn.Module):
     """A module that stores a shared pytorch tensor for use in AdaptedLinear layers"""
 
-    def __init__(self, in_features: int, out_features: int):
+    def __init__(self, in_features: int, out_features: int, block_size=256):
         super().__init__()
-        self.matrix = nn.Parameter(torch.empty(out_features, in_features))
-        nn.init.normal_(self.matrix, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
+        self.out_features, self.in_features = out_features, in_features
+        butterfly_size = int(min(in_features, out_features) / block_size)
+        self.register_buffer("butterfly_flat_indices", get_butterfly_indices(
+            out_features, in_features, block_size, butterfly_size, stretch=False))
+        active_blocks_per_input = self.butterfly_flat_indices.numel() // (in_features // block_size)
+        self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
+
+        nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
         # note: the std is based on SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2)
 
     @property
     def shape(self):
-        return self.matrix.shape
+        return (self.out_features, self.in_features)
 
     def __repr__(self):
         return f"{self.__class__.__name__}{tuple(self.matrix.shape)}"
+
+    def forward(self, input):
+        return butterfly_matmul(input, self.weight, self.butterfly_flat_indices)
 
 
 class SharedLinear(nn.Linear):
@@ -33,20 +44,22 @@ class SharedLinear(nn.Linear):
     def __init__(self, shared_matrix: SharedMatrix, bias: bool = True):
         nn.Module.__init__(self)
         self.shared_matrix = shared_matrix
+        self.out_features, self.in_features = self.shared_matrix.shape
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
 
     @property
     def weight(self):
         return self.shared_matrix.matrix
 
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return self.shared_matrix(input) + self.bias
+
 
 class AdaptedLinear(SharedLinear):
     """A linear layer with a shared full-rank matrix and an individual low-rank adapter"""
 
     def __init__(self, shared_matrix: SharedMatrix, adapter_dim: int = 64, bias: bool = True):
-        nn.Module.__init__(self)
-        self.out_features, self.in_features = shared_matrix.shape
-        self.shared_matrix = shared_matrix
+        super().__init__(shared_matrix, bias)
         if adapter_dim != 0:
             self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
             self.adapter_second = nn.Parameter(torch.zeros(self.out_features, adapter_dim))
@@ -56,12 +69,12 @@ class AdaptedLinear(SharedLinear):
             nn.init.zeros_(self.adapter_second)
         else:
             self.adapter_first = self.adapter_second = None
-        self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
 
-    def forward(self, input):
-        return _GeneralizedLinear.apply(
-            input, self.shared_matrix.matrix, self.bias, self.adapter_first, self.adapter_second
-        )
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        output = super().forward(input)
+        if self.adapter_first is not None:
+            output = F.linear(F.linear(input, self.adapter_first), self.adapter_second, output)
+        return output
 
 
 class _GeneralizedLinear(torch.autograd.Function):
