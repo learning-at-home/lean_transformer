@@ -22,7 +22,7 @@ class CollaborativeArguments:
         metadata={"help": "Consider allreduce peer failed if it does not respond in this many seconds"},
     )
     averaging_timeout: float = field(
-        default=300.0,
+        default=600.0,
         metadata={"help": "Give up on averaging step after this many seconds"},
     )
     offload_optimizer: bool = field(default=True, metadata={"help": "Whether or not to offload optimizer into RAM"})
@@ -69,9 +69,9 @@ class HFTrainerArguments(TrainingArguments):
     fp16: bool = False  # can be enabled depending on the device
 
     max_sequence_length: int = 2048
+    initial_sequence_length: Optional[int] = 512  # used only if warmup > 0, default = pad_to_multiple_of
     sequence_length_warmup_steps: int = 8_000
-    initial_sequence_length: Optional[int] = 64  # used only if warmup > 0, default = pad_to_multiple_of
-    pad_to_multiple_of: int = 64  # sequence length will be divisible by this value
+    pad_to_multiple_of: int = 128  # sequence length will be divisible by this value
 
     output_dir: str = "outputs"
     logging_steps: int = 100
