@@ -18,7 +18,8 @@ class SharedMatrix(nn.Module):
     def __init__(self, in_features: int, out_features: int, block_size=256):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
-        butterfly_size = int(min(in_features, out_features) / block_size)
+        butterfly_size = 2 ** int(math.ceil(math.log2(min(in_features, out_features) / block_size)))
+        print(butterfly_size)
         self.register_buffer("butterfly_flat_indices", get_butterfly_indices(
             out_features, in_features, block_size, butterfly_size, stretch=False))
         active_blocks_per_input = self.butterfly_flat_indices.numel() // (in_features // block_size)

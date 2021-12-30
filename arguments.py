@@ -10,15 +10,15 @@ class CollaborativeArguments:
     """Configuration for CollaborativeOptimizer and its internals"""
 
     target_batch_size: int = field(
-        default=16384,
+        default=32768,
         metadata={"help": "Perform optimizer step after all peers collectively accumulate this many samples"},
     )
     matchmaking_time: float = field(
-        default=30.0,
+        default=120.0,
         metadata={"help": "Averaging group will wait for stragglers for at most this many seconds"},
     )
     next_chunk_timeout: float = field(
-        default=30.0,
+        default=120.0,
         metadata={"help": "Consider allreduce peer failed if it does not respond in this many seconds"},
     )
     averaging_timeout: float = field(
