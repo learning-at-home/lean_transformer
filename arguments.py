@@ -53,7 +53,7 @@ class HFTrainerArguments(TrainingArguments):
     per_device_eval_batch_size: int = 1
     gradient_accumulation_steps: int = 1
 
-    learning_rate: float = 3e-4
+    learning_rate: float = 1e-4
     total_steps: int = 62_500  # total number of collaborative optimizer updates, used for learning rate schedule
     warmup_steps: int = 5000
     min_learning_rate: float = 1e-5  # learning rate after total_steps have passed
