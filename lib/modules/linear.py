@@ -32,7 +32,7 @@ class SharedMatrix(nn.Module):
         return (self.out_features, self.in_features)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}{tuple(self.matrix.shape)}"
+        return f"{self.__class__.__name__}{tuple(self.shape)}"
 
     def forward(self, input):
         return butterfly_matmul(input, self.weight, self.butterfly_flat_indices)
@@ -49,7 +49,7 @@ class SharedLinear(nn.Linear):
 
     @property
     def weight(self):
-        return self.shared_matrix.matrix
+        return self.shared_matrix.weight
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return self.shared_matrix(input) + self.bias
