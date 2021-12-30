@@ -28,6 +28,7 @@ class LeanTransformerConfig(PretrainedConfig):
         adapter_dim: int = 0,
         num_attention_heads: int = 64,
         intermediate_size: int = 16384,
+        block_size: int = 256,
         hidden_act: str = "gelu_new",
         hidden_act_gated: bool = False,
         sandwich_norm: bool = False,
@@ -44,6 +45,7 @@ class LeanTransformerConfig(PretrainedConfig):
         super().__init__(**kwargs)
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
+        self.block_size = block_size
 
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
@@ -127,13 +129,14 @@ class LeanTransformerConfig(PretrainedConfig):
     def get_shared_matrix(self, key: str) -> Optional[SharedMatrix]:
         assert self.share_large_matrices
         if key == "self_attn_qkv":
-            return SharedMatrix(self.hidden_size, self.hidden_size * 3)
+            return SharedMatrix(self.hidden_size, self.hidden_size * 3, block_size=self.block_size)
         if key == "self_attn_out":
-            return SharedMatrix(self.hidden_size, self.hidden_size)
+            return SharedMatrix(self.hidden_size, self.hidden_size, block_size=self.block_size)
         if key == "ffn_first":
-            return SharedMatrix(self.hidden_size, self.intermediate_size * (2 if self.hidden_act_gated else 1))
+            return SharedMatrix(self.hidden_size, self.intermediate_size * (2 if self.hidden_act_gated else 1),
+                                block_size=self.block_size)
         if key == "ffn_second":
-            return SharedMatrix(self.intermediate_size, self.hidden_size)
+            return SharedMatrix(self.intermediate_size, self.hidden_size, block_size=self.block_size)
 
         raise NotImplementedError(f"Unexpected SharedMatrix key: {key}")
 
