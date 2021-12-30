@@ -14,7 +14,7 @@ class CollaborativeArguments:
         metadata={"help": "Perform optimizer step after all peers collectively accumulate this many samples"},
     )
     matchmaking_time: float = field(
-        default=90.0,
+        default=60.0,
         metadata={"help": "Averaging group will wait for stragglers for at most this many seconds"},
     )
     next_chunk_timeout: float = field(
