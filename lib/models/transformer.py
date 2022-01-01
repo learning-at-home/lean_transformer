@@ -1,5 +1,5 @@
 import math
-from functools import lru_cache, partial
+from functools import lru_cache
 from typing import Optional, Tuple
 
 from torch import nn as nn
@@ -9,7 +9,7 @@ from transformers.modeling_outputs import BaseModelOutput
 
 from lib.modules import LeanFFN, LeanSelfAttention
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
-from lib.modules.linear import AdaptedLinear, SharedLinear, SharedMatrix
+from lib.modules.linear import SharedMatrix, SemiSharedLinear
 from lib.modules.sequence import SequentialWithKwargs, ActiveKwargs, ReversibleWithKwargs
 
 
@@ -116,14 +116,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
         shared_matrix = self.get_shared_matrix(key)
         assert tuple(shared_matrix.shape) == (out_features, in_features)
-
-        if self.share_large_matrices and self.adapter_dim == 0:
-            return SharedLinear(shared_matrix, bias)
-
-        if self.adapter_dim != 0:
-            return AdaptedLinear(shared_matrix, self.adapter_dim, bias)
-
-        raise NotImplementedError(f"Unsupported linear configuration: {key, in_features, out_features, bias}")
+        return SemiSharedLinear(shared_matrix, self.adapter_dim, bias)
 
     @lru_cache()
     def get_shared_matrix(self, key: str) -> Optional[SharedMatrix]:

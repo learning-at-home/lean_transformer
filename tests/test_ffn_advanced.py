@@ -101,16 +101,16 @@ def test_ffn_exact_match():
         4 * dim,
         gated=True,
         sandwich_norm=True,
-        dense_i2h=AdaptedLinear(SharedMatrix(dim, 8 * dim)),
-        dense_h2o=AdaptedLinear(SharedMatrix(4 * dim, dim)),
+        dense_i2h=SemiSharedLinear(SharedMatrix(dim, 8 * dim)),
+        dense_h2o=SemiSharedLinear(SharedMatrix(4 * dim, dim)),
     )
     our_ffn = LeanFFN(
         dim,
         4 * dim,
         gated=True,
         sandwich_norm=True,
-        dense_i2h=AdaptedLinear(SharedMatrix(dim, 8 * dim)),
-        dense_h2o=AdaptedLinear(SharedMatrix(4 * dim, dim)),
+        dense_i2h=SemiSharedLinear(SharedMatrix(dim, 8 * dim)),
+        dense_h2o=SemiSharedLinear(SharedMatrix(4 * dim, dim)),
     )
     with torch.no_grad():
         baseline_ffn.sandwich_norm.bias[...] = torch.randn_like(baseline_ffn.sandwich_norm.bias)

@@ -2,8 +2,6 @@
 A module that implements sequential model type with optional keyword arguments.
 When using gradient checkpoints or reversible sequential, keyword arguments should NOT require grad.
 """
-import copy
-from itertools import zip_longest
 from typing import Sequence, Callable
 
 import torch

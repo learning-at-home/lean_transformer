@@ -15,7 +15,7 @@ from lib.modules.pixelfly import get_butterfly_indices, butterfly_matmul
 class SharedMatrix(nn.Module):
     """A module that stores a shared pytorch tensor for use in AdaptedLinear layers"""
 
-    def __init__(self, in_features: int, out_features: int, block_size: int):
+    def __init__(self, in_features: int, out_features: int, block_size: int, lowrank_dim: int):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
         butterfly_size = 2 ** int(math.ceil(math.log2(min(in_features, out_features) / block_size)))
@@ -23,6 +23,12 @@ class SharedMatrix(nn.Module):
             out_features, in_features, block_size, butterfly_size, stretch=False))
         active_blocks_per_input = self.butterfly_flat_indices.numel() // (in_features // block_size)
         self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
+
+        if lowrank_dim:
+            self.lowrank_first = nn.Parameter(torch.zeros(lowrank_dim, self.in_features))
+            self.lowrank_second = nn.Parameter(torch.zeros(self.out_features, lowrank_dim))
+        else:
+            self.lowrank_first = self.lowrank_second = None
 
         nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
         # note: the std is based on SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2)
@@ -35,31 +41,21 @@ class SharedMatrix(nn.Module):
         return f"{self.__class__.__name__}{tuple(self.shape)}"
 
     def forward(self, input):
-        return butterfly_matmul(input, self.weight, self.butterfly_flat_indices)
+        output = butterfly_matmul(input, self.weight, self.butterfly_flat_indices)
+        if self.lowrank_first is not None:
+            output = F.linear(F.linear(input, self.lowrank_first), self.lowrank_second, output)
+        return output
 
 
-class SharedLinear(nn.Linear):
-    """A linear layer with a shared weight matrix and (optional) individual bias"""
+class SemiSharedLinear(nn.Linear):
+    """A linear layer with a shared full-rank matrix and an individual low-rank adapter"""
 
-    def __init__(self, shared_matrix: SharedMatrix, bias: bool = True):
+    def __init__(self, shared_matrix: SharedMatrix, adapter_dim: int, bias: bool = True):
         nn.Module.__init__(self)
         self.shared_matrix = shared_matrix
         self.out_features, self.in_features = self.shared_matrix.shape
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
 
-    @property
-    def weight(self):
-        return self.shared_matrix.weight
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return self.shared_matrix(input) + self.bias
-
-
-class AdaptedLinear(SharedLinear):
-    """A linear layer with a shared full-rank matrix and an individual low-rank adapter"""
-
-    def __init__(self, shared_matrix: SharedMatrix, adapter_dim: int = 64, bias: bool = True):
-        super().__init__(shared_matrix, bias)
         if adapter_dim != 0:
             self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
             self.adapter_second = nn.Parameter(torch.zeros(self.out_features, adapter_dim))
@@ -70,10 +66,27 @@ class AdaptedLinear(SharedLinear):
         else:
             self.adapter_first = self.adapter_second = None
 
+    def get_lowrank_components(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        if self.adapter_first is not None and self.shared_matrix.lowrank_first is None:
+            return self.adapter_first, self.adapter_second
+        elif self.adapter_first is None and self.shared_matrix.lowrank_first is not None:
+            return self.shared_matrix.lowrank_first, self.shared_matrix.lowrank_second
+        elif self.adapter_first is not None and self.shared_matrix.lowrank_first is not None:
+            combined_first = torch.cat([self.shared_matrix.lowrank_first, self.adapter_first], dim=0)
+            # ^-- cat0[(lowrank_dim x input_dim), (adapter_dim, input_dim)] -> (combined_dim, input_dim)
+            combined_second = torch.cat([self.shared_matrix.lowrank_second, self.adapter_second], dim=1)
+            # ^-- cat1[(output_dim x lowrank_dim), (output_dim, adapter_dim)] -> (combined_dim, input_dim)
+            return combined_first, combined_second
+        else:
+            assert self.adapter_first is None and self.adapter_second is None
+            assert self.shared_matrix.lowrank_first is None and self.shared_matrix.adapter_second is None
+            return None, None
+
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        output = super().forward(input)
-        if self.adapter_first is not None:
-            output = F.linear(F.linear(input, self.adapter_first), self.adapter_second, output)
+        output = butterfly_matmul(input, self.shared_matrix.weight, self.shared_matrix.butterfly_flat_indices)
+        lowrank_first, lowrank_second = self.get_lowrank_components()
+        if lowrank_first is not None:
+            output = F.linear(F.linear(input, lowrank_first), lowrank_second, output)
         return output
 
 
