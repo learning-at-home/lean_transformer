@@ -137,11 +137,11 @@ class LeanTransformerConfig(PretrainedConfig):
 
     def init_weights(self, module: nn.Module):
         """Initialize the weights."""
-        if isinstance(module, SharedLinear):
+        if isinstance(module, SharedMatrix):
+            module.weight.data.normal_(mean=0.0, std=self.initializer_range)
+        elif isinstance(module, SemiSharedLinear):
             if module.bias is not None:
                 module.bias.data.zero_()
-        elif isinstance(module, SharedMatrix):
-            module.weight.data.normal_(mean=0.0, std=self.initializer_range)
         elif isinstance(module, nn.Linear):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
