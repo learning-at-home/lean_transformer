@@ -46,15 +46,14 @@ class LeanTransformerConfig(PretrainedConfig):
         super().__init__(**kwargs)
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
+        self.share_large_matrices = share_large_matrices
+        self.adapter_dim = adapter_dim
         self.block_size = block_size
-        self.lowrank_size = lowrank_size
+        self.lowrank_dim = lowrank_size
 
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
         self.num_inner_groups = num_inner_groups
-
-        self.share_large_matrices = share_large_matrices
-        self.adapter_dim = adapter_dim
 
         self.num_attention_heads = num_attention_heads
         self.hidden_act = hidden_act
@@ -124,14 +123,14 @@ class LeanTransformerConfig(PretrainedConfig):
     def get_shared_matrix(self, key: str) -> Optional[SharedMatrix]:
         assert self.share_large_matrices
         if key == "self_attn_qkv":
-            return SharedMatrix(self.hidden_size, self.hidden_size * 3, self.block_size, self.lowrank_size)
+            return SharedMatrix(self.hidden_size, self.hidden_size * 3, self.block_size, self.lowrank_dim)
         if key == "self_attn_out":
-            return SharedMatrix(self.hidden_size, self.hidden_size, self.block_size, self.lowrank_size)
+            return SharedMatrix(self.hidden_size, self.hidden_size, self.block_size, self.lowrank_dim)
         if key == "ffn_first":
             return SharedMatrix(self.hidden_size, self.intermediate_size * (2 if self.hidden_act_gated else 1),
-                                self.block_size, self.lowrank_size)
+                                self.block_size, self.lowrank_dim)
         if key == "ffn_second":
-            return SharedMatrix(self.intermediate_size, self.hidden_size, self.block_size, self.lowrank_size)
+            return SharedMatrix(self.intermediate_size, self.hidden_size, self.block_size, self.lowrank_dim)
 
         raise NotImplementedError(f"Unexpected SharedMatrix key: {key}")
 
