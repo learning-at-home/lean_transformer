@@ -36,7 +36,8 @@ class ActiveKwargs(nn.Module):
 class SequentialWithKwargs(nn.Sequential):
     def __init__(self, *modules: ActiveKwargs):
         for module in modules:
-            assert isinstance(module, ActiveKwargs)
+            assert isinstance(module, ActiveKwargs) or \
+                   (isinstance(module, ReversibleModule) and isinstance(module.wrapped_module, ActiveKwargs))
         super().__init__(*modules)
         self.gradient_checkpointing = False
 
