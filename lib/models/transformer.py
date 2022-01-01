@@ -29,7 +29,7 @@ class LeanTransformerConfig(PretrainedConfig):
         num_attention_heads: int = 64,
         intermediate_size: int = 16384,
         block_size: int = 256,
-        lowrank_size: int = 0,
+        lowrank_dim: int = 0,
         hidden_act: str = "gelu_new",
         hidden_act_gated: bool = False,
         sandwich_norm: bool = False,
@@ -48,8 +48,8 @@ class LeanTransformerConfig(PretrainedConfig):
         self.intermediate_size = intermediate_size
         self.share_large_matrices = share_large_matrices
         self.adapter_dim = adapter_dim
+        self.lowrank_dim = lowrank_dim
         self.block_size = block_size
-        self.lowrank_dim = lowrank_size
 
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
