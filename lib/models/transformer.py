@@ -179,7 +179,7 @@ class LeanTransformer(nn.Module):
                 group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
                 for layer in self.layer_groups[group_idx].layers:
                     sequence.append(ActiveKwargs(layer.attention, ("attention_mask",), use_first_output=True))
-                    sequence.append(ActiveKwargs(layer.ffn))
+                    sequence.append(ActiveKwargs(layer.ffn, active_keys=()))
             sequential_cls = ReversibleWithKwargs if self.config.reversible else SequentialWithKwargs
             self._sequential = (sequential_cls(*sequence), )
         return self._sequential[0]
