@@ -23,15 +23,17 @@ class SharedMatrix(nn.Module):
             out_features, in_features, block_size, butterfly_size, stretch=False))
         active_blocks_per_input = self.butterfly_flat_indices.numel() // (in_features // block_size)
         self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
+        nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
+        # note: the std is based on SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2)
 
         if lowrank_dim:
             self.lowrank_first = nn.Parameter(torch.zeros(lowrank_dim, self.in_features))
             self.lowrank_second = nn.Parameter(torch.zeros(self.out_features, lowrank_dim))
+            nn.init.normal_(self.lowrank_first, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
+            nn.init.normal_(self.lowrank_second, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
+
         else:
             self.lowrank_first = self.lowrank_second = None
-
-        nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
-        # note: the std is based on SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2)
 
     @property
     def shape(self):
