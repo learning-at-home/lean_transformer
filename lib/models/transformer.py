@@ -47,6 +47,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.block_size = block_size
+        self.lowrank_size = lowrank_size
 
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
