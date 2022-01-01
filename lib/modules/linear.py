@@ -13,7 +13,7 @@ from lib.modules.pixelfly import get_butterfly_indices, butterfly_matmul
 
 
 class SharedMatrix(nn.Module):
-    """A module that stores a shared pytorch tensor for use in AdaptedLinear layers"""
+    """A module that stores a shared pytorch tensor for use in SemiSharedLinear layers"""
 
     def __init__(self, in_features: int, out_features: int, block_size: int, lowrank_dim: int):
         super().__init__()

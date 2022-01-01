@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from lib.modules.linear import AdaptedLinear, _GeneralizedLinear
+from lib.modules.linear import SemiSharedLinear, _GeneralizedLinear
 
 
 class LeanFFN(nn.Module):

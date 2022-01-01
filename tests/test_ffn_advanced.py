@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from lib.modules.ffn import LeanFFN
-from lib.modules.linear import AdaptedLinear, SharedMatrix
+from lib.modules.linear import SharedMatrix, SemiSharedLinear
 
 
 class ReferenceFFN(nn.Module):
@@ -44,9 +44,9 @@ class ReferenceFFN(nn.Module):
 
     def forward(self, input):
         i2h_adapter_first = i2h_adapter_second = h2o_adapter_first = h2o_adapter_second = None
-        if isinstance(self.dense_i2h, AdaptedLinear):
+        if isinstance(self.dense_i2h, SemiSharedLinear):
             i2h_adapter_first, i2h_adapter_second = self.dense_i2h.adapter_first, self.dense_i2h.adapter_second
-        if isinstance(self.dense_h2o, AdaptedLinear):
+        if isinstance(self.dense_h2o, SemiSharedLinear):
             h2o_adapter_first, h2o_adapter_second = self.dense_h2o.adapter_first, self.dense_h2o.adapter_second
 
         input_2d = input.view(-1, input.shape[-1])
