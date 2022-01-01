@@ -62,7 +62,7 @@ class ReversibleWithKwargs(ReversibleSequential):
             assert isinstance(module, ActiveKwargs) or \
                    (isinstance(module, ReversibleModule) and isinstance(module.wrapped_module, ActiveKwargs))
         super().__init__(*modules, **kwargs)
-        self.stem = SequentialWithKwargs(self.stem)
+        self.stem = SequentialWithKwargs(*self.stem)
 
     def forward(self, input: torch.Tensor, **kwargs) -> torch.Tensor:
         inp1 = inp0 = input.to(torch.float32)  # enforce upcasting residuals to fp32
