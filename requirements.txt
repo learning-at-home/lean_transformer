@@ -1,6 +1,6 @@
 git+git://github.com/learning-at-home/hivemind@calm
 bitsandbytes-cuda111>=0.26.0
-transformers==4.12.2
+transformers==4.13.0
 tokenizers>=0.10.2
 datasets>=1.11.0
 torch_optimizer>=0.1.0

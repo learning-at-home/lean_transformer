@@ -6,7 +6,8 @@ import torch
 from transformers import DataCollatorForLanguageModeling
 
 try:
-    from transformers.data.data_collator import _torch_collate_batch as collate_batch, tolist
+    from transformers.data.data_collator import _torch_collate_batch as collate_batch
+    from transformers.data.data_collator import tolist
 except ImportError:
     from transformers.data.data_collator import _collate_batch as collate_batch, tolist
 

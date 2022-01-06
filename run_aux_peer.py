@@ -3,15 +3,14 @@ import threading
 import time
 
 import scipy.stats  # compatibility for internal testing environment
-
 import torch
 import transformers
 import wandb
 from hivemind.utils.logging import get_logger, use_hivemind_log_handler
-from huggingface_hub import HfFolder, Repository
+from huggingface_hub import Repository
 from transformers import HfArgumentParser
 
-import utils
+from lib import utils
 from arguments import AuxiliaryPeerArguments, CollaborativeArguments, HFTrainerArguments
 from tasks.gpt.task import CausalLMTask
 
@@ -48,7 +47,7 @@ class CheckpointHandler:
 
     def save_state(self, current_epoch: int):
         logger.info("Saving state from peers")
-        self.task.collaborative_optimizer.load_state_from_peers()
+        self.task.optimizer.load_state_from_peers()
         self.previous_epoch = current_epoch
 
     def is_time_to_upload(self):
@@ -65,7 +64,7 @@ class CheckpointHandler:
         logger.info("Saving model")
         torch.save(self.task.model.state_dict(), f"{self.local_path}/model_state.pt")
         logger.info("Saving optimizer")
-        torch.save(self.task.collaborative_optimizer.state_dict(), f"{self.local_path}/optimizer_state.pt")
+        torch.save(self.task.optimizer.state_dict(), f"{self.local_path}/optimizer_state.pt")
         self.previous_timestamp = time.time()
         logger.info("Started uploading to Model Hub")
         try:
@@ -74,7 +73,7 @@ class CheckpointHandler:
 
             # Then we add / commmit and push the changes
             self.repo.push_to_hub(
-                commit_message=f"Epoch {self.task.collaborative_optimizer.local_epoch}, loss {current_loss:.3f}"
+                commit_message=f"Epoch {self.task.optimizer.local_epoch}, loss {current_loss:.3f}"
             )
             logger.info("Finished uploading to Model Hub")
         except Exception:
@@ -89,7 +88,7 @@ def assist_averaging_in_background(
         try:
             time.sleep(peer_args.assist_refresh)
             with lock:
-                task.collaborative_optimizer.step()
+                task.optimizer.step()
         except Exception as e:
             logger.exception(e, exc_info=True)
 
@@ -100,7 +99,7 @@ if __name__ == "__main__":
     finished, lock = threading.Event(), threading.Lock()
 
     task = CausalLMTask(peer_args, trainer_args, collab_args)
-    dht, collaborative_optimizer = task.dht, task.collaborative_optimizer
+    dht, optimizer = task.dht, task.optimizer
 
     if peer_args.wandb_project is not None:
         wandb.init(project=peer_args.wandb_project)

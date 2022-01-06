@@ -7,9 +7,9 @@ import wandb
 from hivemind.utils.logging import get_logger, use_hivemind_log_handler
 from transformers import HfArgumentParser
 
-import utils
+from lib import utils
 from arguments import CollaborativeArguments, TPUTrainerArguments, TrainingPeerArguments
-from callback import CollaborativeCallback
+from lib.training.callback import CollaborativeCallback
 from lib.training.tpu import TPUManager
 from tasks.mlm.task import MLMTrainingTask
 
@@ -63,9 +63,9 @@ def main():
         tpu_manager.update_model_parameters(model.parameters())
         tpu_manager.zero_grad()
 
-    collaborative_optimizer = task.collaborative_optimizer
-    collaborative_optimizer.callbacks.on_after_global_step.add(push_params_onto_tpu)
-    collaborative_optimizer.callbacks.on_load_state_from_peers(push_params_onto_tpu)
+    optimizer = task.optimizer
+    optimizer.callbacks.on_after_global_step.add(push_params_onto_tpu)
+    optimizer.callbacks.on_load_state_from_peers(push_params_onto_tpu)
 
     collaborative_training_callback = CollaborativeCallback(task, peer_args)
 
@@ -81,12 +81,12 @@ def main():
         loss, num_accumulated = tpu_manager.step()
         time_delta = time.perf_counter() - start_time
         logger.info(f"Accumulated {num_accumulated} gradients at {num_accumulated / time_delta:.3f} samples/second.")
-        wandb.log({"train/loss": loss, "train/learning_rate": collaborative_optimizer.scheduler.get_lr()[0]})
+        wandb.log({"train/loss": loss, "train/learning_rate": optimizer.scheduler.get_lr()[0]})
 
         with torch.no_grad():
             for param, grad_from_tpu in zip(model.parameters(), tpu_manager.get_aggregated_gradients()):
                 param.grad[...] = grad_from_tpu
-            collaborative_optimizer.step()
+            optimizer.step()
 
         state.log_history.append(dict(loss=loss))
         collaborative_training_callback.on_step_end(trainer_args, state, control)

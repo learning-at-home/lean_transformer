@@ -1,10 +1,10 @@
-import math
 import functools
+import math
 from typing import Optional
 
+import einops
 import torch
 import torch.nn.functional as F
-import einops
 
 
 @functools.lru_cache

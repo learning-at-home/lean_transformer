@@ -2,16 +2,15 @@
 A module that implements sequential model type with optional keyword arguments.
 When using gradient checkpoints or reversible sequential, keyword arguments should NOT require grad.
 """
-from typing import Sequence, Callable
+from typing import Callable, Sequence
 
 import torch
+from hivemind.utils.logging import get_logger
+from revlib import ReversibleModule, ReversibleSequential
 from torch import nn as nn
 from torch.utils.checkpoint import checkpoint
-from revlib import ReversibleModule, ReversibleSequential
-from hivemind.utils.logging import get_logger
 
-
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class ActiveKwargs(nn.Module):

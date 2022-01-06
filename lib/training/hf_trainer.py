@@ -2,13 +2,18 @@
 
 import hivemind
 import torch
+import torch.distributed
 from hivemind.utils.logging import get_logger, use_hivemind_log_handler
 from torch import nn
 from torch.utils.data import DataLoader
 from transformers.trainer import Trainer
 
+from arguments import HFTrainerArguments
+from lib.modules.rotary import RotaryEmbeddings
+from lib.training.sync import is_main_process
+
 use_hivemind_log_handler("in_root_logger")
-logger = get_logger()
+logger = get_logger(__name__)
 LRSchedulerBase = getattr(torch.optim.lr_scheduler, "_LRScheduler", None)
 
 
@@ -18,25 +23,51 @@ class CollaborativeHFTrainer(Trainer):
     Used to ensure that peers don't process batches in the same order.
     """
 
-    def __init__(self, *, data_seed: int, collaborative_optimizer: hivemind.Optimizer, **kwargs):
+    def __init__(self, *, data_seed: int, optimizer: hivemind.Optimizer, reuse_grad_buffers: bool, **kwargs):
         self.data_seed = data_seed
-        self.collaborative_optimizer = collaborative_optimizer
-        super().__init__(optimizers=(collaborative_optimizer, NoOpScheduler(collaborative_optimizer)), **kwargs)
+        self.optimizer = optimizer
+        self.reuse_grad_buffers = reuse_grad_buffers
+        assert torch.distributed.is_initialized() != reuse_grad_buffers, "TODO support reuse with DDP"
+        super().__init__(optimizers=(optimizer, NoOpScheduler(optimizer)), **kwargs)
 
-        if self.use_amp is not None and self.collaborative_optimizer.grad_averager.reuse_grad_buffers:
+        if self.use_amp and self.reuse_grad_buffers:
             self.scaler = hivemind.GradScaler()
 
     def get_train_dataloader(self) -> DataLoader:
         """Shuffle data independently for each peer to avoid duplicating batches [important for quality]"""
-        torch.manual_seed(self.data_seed)
+        seed = self.data_seed
+        if torch.distributed.is_initialized():
+            seed += torch.distributed.get_rank()
+        torch.manual_seed(seed)
         return super().get_train_dataloader()
 
-    def _wrap_model(self, model, training=True):
+    def _wrap_model(self, model: nn.Module, training=True):
+        assert training, "Evaluation (training=False) should be run on a separate dedicated worker."
+        model = super()._wrap_model(model, training)
+        if torch.distributed.is_initialized():
+            assert isinstance(model, nn.parallel.DistributedDataParallel)
+            assert model.require_forward_param_sync
+            logger.info("Pre-populating rotary embedding cache up to maximum length to enforce static graph")
+            assert isinstance(self.args, HFTrainerArguments)
+            device = f"{model.device_type}:{model.output_device}"
+            for module in model.modules():
+                if isinstance(module, RotaryEmbeddings):
+                    module._set_auxiliary_buffers(max_len=self.args.max_sequence_length, device=device)
+
+            logger.warning("DistributedDataParallel: triggering _set_static_graph() to allow checkpointing/reversible")
+            model._set_static_graph()
+
         # if reuse_grad_buffers is True, we should accumulate gradients in .grad without zeroing them after each step
-        return IgnoreGradManipulations(
-            super()._wrap_model(model, training=training),
-            override_zero_grad=self.collaborative_optimizer.grad_averager.reuse_grad_buffers,
-        )
+        should_override_zero_grad = self.reuse_grad_buffers if is_main_process() else False  # replicas can reset grad
+        return IgnoreGradManipulations(model, override_zero_grad=should_override_zero_grad)
+
+
+class NOPtimizer(torch.optim.SGD):
+    def __init__(self, params):
+        super().__init__(params, lr=0)
+
+    def step(self, *args, **kwargs):
+        pass
 
 
 class NoOpScheduler(LRSchedulerBase):

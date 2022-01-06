@@ -4,7 +4,7 @@ from typing import Optional
 import einops
 import torch
 
-from lib.modules.pixelfly import butterfly_factor_to_matrix, get_butterfly_indices, block_sparse_matmul
+from lib.modules.pixelfly import block_sparse_matmul, butterfly_factor_to_matrix, get_butterfly_indices
 
 
 def test_block_sparse_matmul_internals(

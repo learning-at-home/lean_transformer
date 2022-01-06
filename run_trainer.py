@@ -4,16 +4,16 @@ import os
 from pathlib import Path
 
 import scipy.stats  # compatibility for internal testing environment
-import torch
-
+import torch.distributed
 import transformers
 from hivemind.utils.logging import get_logger, use_hivemind_log_handler
 from transformers import HfArgumentParser
 
-import callback
-import utils
+from lib import utils
 from arguments import CollaborativeArguments, HFTrainerArguments, TrainingPeerArguments
-from lib.training.hf_trainer import CollaborativeHFTrainer
+from lib.training.callback import CollaborativeCallback
+from lib.training.hf_trainer import CollaborativeHFTrainer, NOPtimizer
+from lib.training.sync import SynchronizationCallback, is_main_process
 from tasks.gpt.task import CausalLMTask
 
 use_hivemind_log_handler("in_root_logger")
@@ -24,16 +24,21 @@ torch.set_num_threads(1)  # avoid quadratic number of threads
 def main():
     parser = HfArgumentParser((TrainingPeerArguments, HFTrainerArguments, CollaborativeArguments))
     training_peer_args, trainer_args, collab_args = parser.parse_args_into_dataclasses()
+    if torch.distributed.is_initialized():
+        assert not collab_args.reuse_grad_buffers, "Reuse_grad_buffers are not supported in distributed mode"
 
     logger.info(f"Trying {len(training_peer_args.initial_peers)} initial peers: {training_peer_args.initial_peers}")
     if len(training_peer_args.initial_peers) == 0:
-        logger.warning("Specify at least one network endpoint in initial peers OR let others join your peer.")
+        logger.warning("Please specify initial peers or let others join your peer")
 
     utils.setup_logging(trainer_args)
     task = CausalLMTask(training_peer_args, trainer_args, collab_args)
     model = task.model.to(trainer_args.device)
+    for param in model.parameters():
+        if param.grad is None:
+            param.grad = torch.zeros_like(param)
 
-    collaborative_callback = callback.CollaborativeCallback(task, training_peer_args)
+    callbacks = [(CollaborativeCallback if is_main_process() else SynchronizationCallback)(task, training_peer_args)]
     assert trainer_args.do_train and not trainer_args.do_eval
 
     # Note: the code below creates the trainer with dummy scheduler and removes some callbacks.
@@ -45,9 +50,10 @@ def main():
         data_collator=task.data_collator,
         data_seed=hash(task.local_public_key),
         train_dataset=task.training_dataset,
+        reuse_grad_buffers=collab_args.reuse_grad_buffers,
         eval_dataset=None,
-        collaborative_optimizer=task.collaborative_optimizer,
-        callbacks=[collaborative_callback],
+        optimizer=task.optimizer if is_main_process() else NOPtimizer(task._make_param_groups()),
+        callbacks=callbacks,
     )
     trainer.remove_callback(transformers.trainer_callback.PrinterCallback)
     trainer.remove_callback(transformers.trainer_callback.ProgressCallback)

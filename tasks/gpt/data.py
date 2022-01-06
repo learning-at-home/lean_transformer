@@ -1,18 +1,16 @@
+import ctypes
 import logging
+import multiprocessing as mp
+import multiprocessing.sharedctypes
+from collections import defaultdict
 from functools import partial
 from typing import Optional, Union
 
 import torch.utils.data
-from datasets import IterableDataset
+from datasets import IterableDataset, disable_progress_bar
 from transformers import GPT2TokenizerFast
 
 from .yt_streaming import YTDataset
-
-from collections import defaultdict
-from datasets import disable_progress_bar
-import multiprocessing as mp
-import multiprocessing.sharedctypes
-import ctypes
 
 logger = logging.getLogger(__name__)
 

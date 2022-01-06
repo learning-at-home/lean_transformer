@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from lib.modules.ffn import LeanFFN
-from lib.modules.linear import SharedMatrix, SemiSharedLinear
+from lib.modules.linear import SemiSharedLinear, SharedMatrix
 
 
 class ReferenceFFN(nn.Module):

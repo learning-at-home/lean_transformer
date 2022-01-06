@@ -1,5 +1,5 @@
 """
-Auxiliary modules for implementing Rotary Position Embeddi g
+Auxiliary modules for implementing Rotary Position Embeddings
 Original paper: https://arxiv.org/abs/2104.09864
 Based on reference implementation from https://blog.eleuther.ai/rotary-embeddings
 """
@@ -7,7 +7,11 @@ import functools
 import os
 
 import torch
+import torch.distributed
 import torch.nn as nn
+from hivemind.utils.logging import get_logger
+
+logger = get_logger(__file__)
 
 
 class RotaryEmbeddings(nn.Module):
@@ -18,8 +22,8 @@ class RotaryEmbeddings(nn.Module):
         self.dim, self.base = dim, base
         self._rotate = maybe_script(rotate)
         self._get_auxiliary_tensors = maybe_script(get_auxiliary_tensors)
-        self.register_buffer("cos", torch.empty(0, dim), persistent=False)
-        self.register_buffer("sin", torch.empty(0, dim), persistent=False)
+        self.register_buffer("cos", torch.empty(1, dim), persistent=False)
+        self.register_buffer("sin", torch.empty(1, dim), persistent=False)
 
     def forward(self, x: torch.Tensor, offset: int = 0):
         """
@@ -27,13 +31,19 @@ class RotaryEmbeddings(nn.Module):
         :param offset: add this value to all position indices
         """
         seq_len = x.shape[1]
-        if seq_len + offset >= self.cos.shape[0] or x.dtype != self.cos.dtype or x.device != self.cos.device:
-            _cos, _sin = self._get_auxiliary_tensors(seq_len + offset, self.dim, x.dtype, x.device, self.base)
-            self.register_buffer("cos", _cos, persistent=False)
-            self.register_buffer("sin", _sin, persistent=False)
+        if seq_len + offset > self.cos.shape[0] or x.device != self.cos.device:
+            if torch.distributed.is_initialized():
+                logger.warning("Rebuilding auxiliary tensors for rotary embeddings, this may cause DDP to freeze. To "
+                               "avoid this, call _set_auxiliary_tensors for maximum length before the training starts")
+            self._set_auxiliary_buffers(max_len=seq_len + offset, device=x.device)
         cosines_for_position = self.cos[None, offset : seq_len + offset, None, :]
         sines_for_position = self.sin[None, offset : seq_len + offset, None, :]
         return self._rotate(x, cosines_for_position, sines_for_position)
+
+    def _set_auxiliary_buffers(self, max_len: int, device: torch.device):
+        _cos, _sin = self._get_auxiliary_tensors(max_len, self.dim, torch.float32, device, self.base)
+        self.register_buffer("cos", _cos, persistent=False)
+        self.register_buffer("sin", _sin, persistent=False)
 
 
 @torch.no_grad()
