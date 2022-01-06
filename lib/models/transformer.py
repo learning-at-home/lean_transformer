@@ -9,8 +9,8 @@ from transformers.modeling_outputs import BaseModelOutput
 
 from lib.modules import LeanFFN, LeanSelfAttention
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
-from lib.modules.linear import SharedMatrix, SemiSharedLinear
-from lib.modules.sequence import SequentialWithKwargs, ActiveKwargs, ReversibleWithKwargs
+from lib.modules.linear import SemiSharedLinear, SharedMatrix
+from lib.modules.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
 
 
 class LeanTransformerConfig(PretrainedConfig):

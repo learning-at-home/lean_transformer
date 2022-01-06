@@ -22,7 +22,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.albert.modeling_albert import AlbertForPreTrainingOutput
 from transformers.utils import logging
 
-from lib.models.transformer import LeanTransformer, LeanTransformerConfig, GradientCheckpointingMixin
+from lib.models.transformer import GradientCheckpointingMixin, LeanTransformer, LeanTransformerConfig
 
 logger = logging.get_logger(__name__)
 

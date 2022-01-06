@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from lib.modules.pixelfly import get_butterfly_indices, butterfly_matmul
+from lib.modules.pixelfly import butterfly_matmul, get_butterfly_indices
 
 
 class SharedMatrix(nn.Module):
@@ -89,6 +89,8 @@ class SemiSharedLinear(nn.Linear):
         lowrank_first, lowrank_second = self.get_lowrank_components()
         if lowrank_first is not None:
             output = F.linear(F.linear(input, lowrank_first), lowrank_second, output)
+        if self.bias is not None:
+            output += self.bias
         return output
 
 
@@ -103,6 +105,7 @@ class _GeneralizedLinear(torch.autograd.Function):
         adapter_first: torch.Tensor,
         adapter_second: torch.Tensor,
     ):
+        raise NotImplementedError()
         output, tensors_to_save = _GeneralizedLinear._forward_impl(input, weight, bias, adapter_first, adapter_second)
         ctx.save_for_backward(*tensors_to_save)
         return output

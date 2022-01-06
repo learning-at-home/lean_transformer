@@ -84,6 +84,7 @@ class HFTrainerArguments(TrainingArguments):
     max_steps: int = 10 ** 30
     save_steps: int = 10 ** 30
     save_total_limit: int = 2
+    ddp_find_unused_parameters: bool = False
 
     @property
     def batch_size_per_step(self):
