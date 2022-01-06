@@ -137,6 +137,7 @@ class MLMTrainingTask(TrainingTaskBase):
             param_groups,
             lr=self.trainer_args.learning_rate,
             betas=(self.trainer_args.adam_beta1, self.trainer_args.adam_beta2),
+            min_8bit_size=self.trainer_args.min_8bit_size,
             max_grad_norm=self.trainer_args.max_grad_norm,
             clamp_value=self.trainer_args.clamp_value,
             eps=self.trainer_args.adam_epsilon,
