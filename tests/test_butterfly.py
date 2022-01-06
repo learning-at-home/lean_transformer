@@ -124,18 +124,11 @@ def reference_butterfly_layout_for_testing(
 
 
 def test_butterfly_gradients():
-    # out_features = 3072 * 4
-    # in_features = 3072
-    # block_size = 96
-    # n_factors = None
-    # butterfly_size = None
-    # stretch = False
-
-    out_features = 1024
-    in_features = 512
-    block_size = 64
-    n_factors = 8
-    butterfly_size = 256
+    out_features = 3072 * 4
+    in_features = 3072
+    block_size = 96
+    n_factors = None
+    butterfly_size = None
     stretch = False
 
     torch.manual_seed(42)
@@ -143,10 +136,10 @@ def test_butterfly_gradients():
         out_features, in_features, block_size, butterfly_size, n_factors, stretch
     )
 
-    input = torch.randn(3, in_features, requires_grad=True)
+    input = torch.randn(3, 2, in_features, requires_grad=True)
     weight = torch.randn(in_features, forward_indices.shape[1] * out_features // in_features, block_size,
                          requires_grad=True)
-    grad_output = torch.randn(3, out_features)
+    grad_output = torch.randn(3, 2, out_features)
 
     with torch.no_grad():
         our_grad_input, our_grad_weight = butterfly_matmul_backward(grad_output, input, weight, backward_indices)

@@ -95,7 +95,7 @@ def get_butterfly_indices(
     )[-1].view(input_block_index.shape)
 
     forward_indices = input_block_index * active_blocks_per_input + active_block_index
-    backward_indices = active_block_index
+    backward_indices = output_block_index
     return forward_indices, backward_indices
 
 
