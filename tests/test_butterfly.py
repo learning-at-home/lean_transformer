@@ -4,7 +4,7 @@ from typing import Optional
 import einops
 import torch
 
-from lib.modules.pixelfly import block_sparse_matmul, butterfly_factor_to_matrix, get_butterfly_indices
+from lib.modules.pixelfly import butterfly_matmul, butterfly_matmul_backward, butterfly_factor_to_matrix, get_butterfly_indices
 
 
 def test_block_sparse_matmul_internals(
@@ -18,7 +18,7 @@ def test_block_sparse_matmul_internals(
 ):
     """Test that butterfly matmul is indeed doing additive butterfly matrix multiplication"""
 
-    butterfly_flat_indices = get_butterfly_indices(
+    butterfly_flat_indices, _backward_indices = get_butterfly_indices(
         out_features, in_features, block_size, butterfly_size, n_factors, stretch
     )
     assert (
@@ -41,7 +41,7 @@ def test_block_sparse_matmul_internals(
     input[:, test_block * block_size : test_block * (block_size + 1)].fill_(1)
     # END SETUP TEST CONDITIONS
 
-    outputs = block_sparse_matmul(input, weight, butterfly_flat_indices)
+    outputs = butterfly_matmul(input, weight, butterfly_flat_indices)
 
     # BEGIN TEST CASE
     layout = reference_butterfly_layout_for_testing(
@@ -121,3 +121,41 @@ def reference_butterfly_layout_for_testing(
                 .reshape_as(layout)
             )
     return layout
+
+
+def test_butterfly_gradients():
+    # out_features = 3072 * 4
+    # in_features = 3072
+    # block_size = 96
+    # n_factors = None
+    # butterfly_size = None
+    # stretch = False
+
+    out_features = 1024
+    in_features = 512
+    block_size = 64
+    n_factors = 8
+    butterfly_size = 256
+    stretch = False
+
+    torch.manual_seed(42)
+    forward_indices, backward_indices = get_butterfly_indices(
+        out_features, in_features, block_size, butterfly_size, n_factors, stretch
+    )
+
+    input = torch.randn(3, in_features, requires_grad=True)
+    weight = torch.randn(in_features, forward_indices.shape[1] * out_features // in_features, block_size,
+                         requires_grad=True)
+    grad_output = torch.randn(3, out_features)
+
+    with torch.no_grad():
+        our_grad_input, our_grad_weight = butterfly_matmul_backward(grad_output, input, weight, backward_indices)
+
+    with torch.enable_grad():
+        out = butterfly_matmul(input, weight, forward_indices)
+
+    out.backward(grad_output)
+    assert torch.allclose(our_grad_input, input.grad)
+    assert torch.allclose(our_grad_weight, weight.grad)
+
+

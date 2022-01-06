@@ -18,9 +18,9 @@ class SharedMatrix(nn.Module):
     def __init__(self, in_features: int, out_features: int, block_size: int, lowrank_dim: int):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
-        butterfly_size = 2 ** int(math.ceil(math.log2(min(in_features, out_features) / block_size)))
-        self.register_buffer("butterfly_flat_indices", get_butterfly_indices(
-            out_features, in_features, block_size, butterfly_size, stretch=False))
+        forward_indices, backward_indices = get_butterfly_indices(out_features, in_features, block_size, stretch=False)
+        self.register_buffer("forward_indices", forward_indices)
+        self.register_buffer("backward_indices", backward_indices)
         active_blocks_per_input = self.butterfly_flat_indices.numel() // (in_features // block_size)
         self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
         nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
@@ -43,10 +43,7 @@ class SharedMatrix(nn.Module):
         return f"{self.__class__.__name__}{tuple(self.shape)}"
 
     def forward(self, input):
-        output = butterfly_matmul(input, self.weight, self.butterfly_flat_indices)
-        if self.lowrank_first is not None:
-            output = F.linear(F.linear(input, self.lowrank_first), self.lowrank_second, output)
-        return output
+        raise NotImplementedError()
 
 
 class SemiSharedLinear(nn.Linear):
@@ -85,7 +82,7 @@ class SemiSharedLinear(nn.Linear):
             return None, None
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        output = butterfly_matmul(input, self.shared_matrix.weight, self.shared_matrix.butterfly_flat_indices)
+        output = butterfly_matmul(input, self.shared_matrix.weight, self.shared_matrix.forward_indices)
         lowrank_first, lowrank_second = self.get_lowrank_components()
         if lowrank_first is not None:
             output = F.linear(F.linear(input, lowrank_first), lowrank_second, output)
@@ -101,12 +98,14 @@ class _GeneralizedLinear(torch.autograd.Function):
         ctx,
         input: torch.Tensor,
         weight: torch.Tensor,
+        weight_layout: Optional[torch.Tensor],
         bias: Optional[torch.Tensor],
         adapter_first: torch.Tensor,
         adapter_second: torch.Tensor,
     ):
-        raise NotImplementedError()
-        output, tensors_to_save = _GeneralizedLinear._forward_impl(input, weight, bias, adapter_first, adapter_second)
+        output, tensors_to_save = _GeneralizedLinear._forward_impl(
+            input, weight, bias, adapter_first, adapter_second, weight_layout
+        )
         ctx.save_for_backward(*tensors_to_save)
         return output
 
@@ -114,16 +113,22 @@ class _GeneralizedLinear(torch.autograd.Function):
     def _forward_impl(
         input: torch.Tensor,
         weight: torch.Tensor,
+        weight_layout: Optional[torch.Tensor],
         bias: Optional[torch.Tensor],
         adapter_first: torch.Tensor,
         adapter_second: torch.Tensor,
     ) -> Tuple[torch.Tensor, Sequence[torch.Tensor]]:
         adapter_hid = None
-        output = F.linear(input, weight, bias)
+        if weight_layout is not None:
+            output = butterfly_matmul(input, weight, weight_layout)
+            if bias is not None:
+                output += bias
+        else:
+            output = F.linear(input, weight, bias)
         if adapter_first is not None:
             adapter_hid = F.linear(input, adapter_first)
             output = F.linear(adapter_hid, adapter_second, output)
-        tensors_to_save = input, adapter_hid, weight, adapter_first, adapter_second
+        tensors_to_save = input, adapter_hid, weight, adapter_first, adapter_second, weight_layout
         return output, tensors_to_save
 
     @staticmethod
