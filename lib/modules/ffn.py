@@ -42,7 +42,7 @@ class LeanFFN(nn.Module):
         self.dropout = dropout
         self.residual = residual
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor):
         input_2d = input.view(-1, input.shape[-1])
         input_ln = F.layer_norm(
             input_2d, input.shape[-1:], self.layer_norm.weight, self.layer_norm.bias, self.layer_norm.eps
