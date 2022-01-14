@@ -21,7 +21,7 @@ class SharedMatrix(nn.Module):
         forward_indices, backward_indices = get_butterfly_indices(out_features, in_features, block_size, stretch=False)
         self.register_buffer("forward_indices", forward_indices)
         self.register_buffer("backward_indices", backward_indices)
-        active_blocks_per_input = self.butterfly_flat_indices.numel() // (in_features // block_size)
+        active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
         self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
         nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
         # note: the std is based on SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2)
