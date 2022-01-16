@@ -8,7 +8,7 @@ from lib.modules.ffn import LeanFFN
 from lib.modules.linear import SemiSharedLinear, SharedMatrix
 
 
-class ReferenceFFNSimple(nn.Module):
+class SimpleFFN(nn.Module):
     def __init__(
         self, hidden_size: int, intermediate_size: int, activation=F.gelu, layer_norm_eps=1e-12, dropout: float = 0.0
     ):
@@ -35,7 +35,7 @@ def test_ffn_simple():
     dim = 32
     num_layers = 4
 
-    baseline_ffn = ReferenceFFNSimple(dim, 4 * dim)
+    baseline_ffn = SimpleFFN(dim, 4 * dim)
     our_ffn = LeanFFN(dim, 4 * dim)
 
     assert our_ffn.load_state_dict(baseline_ffn.state_dict())
@@ -81,9 +81,10 @@ def test_ffn_simple():
     for grad_ref, grad_our in zip(grad_params_ref, grad_params_our):
         assert torch.allclose(grad_ref, grad_our)
 
-class ReferenceFFNShared(nn.Module):
+
+class ReferenceFFN(nn.Module):
     """
-    A transformer FFN module that doesn't hog your GPU memory.
+    A transformer FFN module that DOES hog your GPU memory.
     Complete with pre-LayerNorm, residual connections and dropout.
 
     :param gated: use gated activations based on https://arxiv.org/abs/2002.05202 and https://arxiv.org/abs/2102.11972
@@ -115,39 +116,21 @@ class ReferenceFFNShared(nn.Module):
         self.dropout = dropout
         self.residual = residual
 
-    def forward(self, input):
-        i2h_adapter_first = i2h_adapter_second = h2o_adapter_first = h2o_adapter_second = None
-        if isinstance(self.dense_i2h, SemiSharedLinear):
-            i2h_adapter_first, i2h_adapter_second = self.dense_i2h.adapter_first, self.dense_i2h.adapter_second
-        if isinstance(self.dense_h2o, SemiSharedLinear):
-            h2o_adapter_first, h2o_adapter_second = self.dense_h2o.adapter_first, self.dense_h2o.adapter_second
-
+    def forward(self, input: torch.Tensor):
         input_2d = input.view(-1, input.shape[-1])
         input_ln = F.layer_norm(
             input_2d, input.shape[-1:], self.layer_norm.weight, self.layer_norm.bias, self.layer_norm.eps
         )
-        pre_activation = self.linear_forward(
-            input_ln, self.dense_i2h.weight, self.dense_i2h.bias, i2h_adapter_first, i2h_adapter_second
-        )
-        hid_act = self._apply_activation(pre_activation, self.activation, self.dense_h2o.weight.shape[1])
+        pre_activation = self.dense_i2h(input_ln)
+        hid_act = self._apply_activation(pre_activation, self.activation, self.dense_h2o.in_features)
 
-        out = self.linear_forward(
-            hid_act, self.dense_h2o.weight, self.dense_h2o.bias, h2o_adapter_first, h2o_adapter_second
-        )
+        out = self.dense_h2o(hid_act)
         if self.sandwich_norm:
             out = self.sandwich_norm(out)
         out = F.dropout(out, self.dropout, self.training)
         if self.residual:
             out = out.add(input_2d)
         return out.view(*input.shape)
-
-    @staticmethod
-    def linear_forward(input, weight, bias, adapter_first, adapter_second):
-        output = F.linear(input, weight, bias)
-        if adapter_first is not None:
-            adapter_hid = F.linear(input, adapter_first)
-            output = F.linear(adapter_hid, adapter_second, output)
-        return output
 
     @staticmethod
     def _apply_activation(pre_activation: torch.Tensor, activation: callable, hid_size: int):
@@ -169,7 +152,7 @@ def test_ffn_shared():
     dim = 32
     num_layers = 4
 
-    baseline_ffn = ReferenceFFNShared(
+    baseline_ffn = ReferenceFFN(
         dim,
         4 * dim,
         gated=True,
