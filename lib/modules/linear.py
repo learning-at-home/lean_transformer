@@ -130,11 +130,11 @@ class _GeneralizedLinear(torch.autograd.Function):
     def _forward_impl(
         input: torch.Tensor,
         main_weight: torch.Tensor,
-        lowrank_first: torch.Tensor,
-        lowrank_second: torch.Tensor,
+        bias: Optional[torch.Tensor],
+        lowrank_first: Optional[torch.Tensor],
+        lowrank_second: Optional[torch.Tensor],
         forward_indices: Optional[torch.IntTensor],
         backward_indices: Optional[torch.IntTensor],
-        bias: Optional[torch.Tensor],
     ) -> Tuple[torch.Tensor, Sequence[torch.Tensor]]:
         if forward_indices is not None:
             output = butterfly_matmul(input, main_weight, forward_indices)
