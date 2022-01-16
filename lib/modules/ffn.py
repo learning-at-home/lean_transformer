@@ -47,14 +47,14 @@ class LeanFFN(nn.Module):
         sandwich_ln_weight = sandwich_ln_bias = None
         if self.sandwich_norm is not None:
             sandwich_ln_weight, sandwich_ln_bias = self.sandwich_norm.weight, self.sandwich_norm.bias
-        i2h_adapter_first = i2h_adapter_second = h2o_adapter_first = h2o_adapter_second = None
+        i2h_lowrank_first = i2h_lowrank_second = h2o_lowrank_first = h2o_lowrank_second = None
         i2h_forward_indices = i2h_backward_indices = h2o_forward_indices = h2o_backward_indices = None
         if isinstance(self.dense_i2h, SemiSharedLinear):
-            i2h_adapter_first, i2h_adapter_second = self.dense_i2h.get_combined_lowrank_components()
+            i2h_lowrank_first, i2h_lowrank_second = self.dense_i2h.get_combined_lowrank_components()
             i2h_forward_indices = self.dense_i2h.shared_matrix.forward_indices
             i2h_backward_indices = self.dense_i2h.shared_matrix.backward_indices
         if isinstance(self.dense_h2o, SemiSharedLinear):
-            h2o_adapter_first, h2o_adapter_second = self.dense_h2o.get_combined_lowrank_components()
+            h2o_lowrank_first, h2o_lowrank_second = self.dense_h2o.get_combined_lowrank_components()
             h2o_forward_indices = self.dense_h2o.shared_matrix.forward_indices
             h2o_backward_indices = self.dense_h2o.shared_matrix.backward_indices
 
@@ -65,14 +65,14 @@ class LeanFFN(nn.Module):
             self.layer_norm.bias,
             self.dense_i2h.weight,
             self.dense_i2h.bias,
-            i2h_adapter_first,
-            i2h_adapter_second,
+            i2h_lowrank_first,
+            i2h_lowrank_second,
             i2h_forward_indices,
             i2h_backward_indices,
             self.dense_h2o.weight,
             self.dense_h2o.bias,
-            h2o_adapter_first,
-            h2o_adapter_second,
+            h2o_lowrank_first,
+            h2o_lowrank_second,
             h2o_forward_indices,
             h2o_backward_indices,
             sandwich_ln_weight,
@@ -107,14 +107,14 @@ class _LeanFFN(torch.autograd.Function):
         ln_bias: torch.Tensor,
         i2h_weight: torch.Tensor,
         i2h_bias: Optional[torch.Tensor],
-        i2h_adapter_first: Optional[torch.Tensor],
-        i2h_adapter_second: Optional[torch.Tensor],
+        i2h_lowrank_first: Optional[torch.Tensor],
+        i2h_lowrank_second: Optional[torch.Tensor],
         i2h_forward_indices: Optional[torch.IntTensor],
         i2h_backward_indices: Optional[torch.IntTensor],
         h2o_weight: torch.Tensor,
         h2o_bias: Optional[torch.Tensor],
-        h2o_adapter_first: Optional[torch.Tensor],
-        h2o_adapter_second: Optional[torch.Tensor],
+        h2o_lowrank_first: Optional[torch.Tensor],
+        h2o_lowrank_second: Optional[torch.Tensor],
         h2o_forward_indices: Optional[torch.IntTensor],
         h2o_backward_indices: Optional[torch.IntTensor],
         sandwich_ln_weight: Optional[torch.Tensor],
@@ -138,13 +138,13 @@ class _LeanFFN(torch.autograd.Function):
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
 
         pre_activation, i2h_tensors = _SemiSharedLinear._forward_impl(
-            input_ln, i2h_weight, i2h_bias, i2h_adapter_first, i2h_adapter_second, i2h_forward_indices, i2h_backward_indices
+            input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second, i2h_forward_indices, i2h_backward_indices
         )
 
         hid_act = _LeanFFN._apply_activation(pre_activation, ctx._activation, ctx._gated)
 
         out, h2o_tensors = _SemiSharedLinear._forward_impl(
-            hid_act, h2o_weight, h2o_bias, h2o_adapter_first, h2o_adapter_second, h2o_forward_indices, h2o_backward_indices
+            hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second, h2o_forward_indices, h2o_backward_indices
         )
 
         if ctx._use_sandwich:
@@ -225,7 +225,7 @@ class _LeanFFN(torch.autograd.Function):
             hid_act = _LeanFFN._apply_activation(pre_activation, ctx._activation, ctx._gated)
 
             with torch.no_grad():
-                (grad_hid_act, grad_h2o_weight, grad_h2o_bias, grad_h2o_adapter_first, grad_h2o_adapter_second,
+                (grad_hid_act, grad_h2o_weight, grad_h2o_bias, grad_h2o_lowrank_first, grad_h2o_lowrank_second,
                  unused_grad_forward_indices, unused_grad_backward_indices) = \
                     _LeanFFN._h2o_backward(ctx, grad_h2o_output_2d, hid_act)
 
@@ -239,7 +239,7 @@ class _LeanFFN(torch.autograd.Function):
             input_ln_2d = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ctx._ln_eps)
 
             with torch.no_grad():
-                (grad_input_ln_2d, grad_i2h_weight, grad_i2h_bias, grad_i2h_adapter_first, grad_i2h_adapter_second,
+                (grad_input_ln_2d, grad_i2h_weight, grad_i2h_bias, grad_i2h_lowrank_first, grad_i2h_lowrank_second,
                  unused_grad_forward_indices, unused_grad_backward_indices) = \
                     _LeanFFN._i2h_backward(ctx, grad_hid, input_ln_2d)
 
@@ -256,6 +256,6 @@ class _LeanFFN(torch.autograd.Function):
             grad_input = grad_input.view(*input.shape)
 
         return (grad_input, grad_ln_weight, grad_ln_bias,
-                grad_i2h_weight, grad_i2h_bias, grad_i2h_adapter_first, grad_i2h_adapter_second, None, None,
-                grad_h2o_weight, grad_h2o_bias, grad_h2o_adapter_first, grad_h2o_adapter_second, None, None,
+                grad_i2h_weight, grad_i2h_bias, grad_i2h_lowrank_first, grad_i2h_lowrank_second, None, None,
+                grad_h2o_weight, grad_h2o_bias, grad_h2o_lowrank_first, grad_h2o_lowrank_second, None, None,
                 grad_sandwich_ln_weight, grad_sandwich_ln_bias, None, None, None, None, None, None)
