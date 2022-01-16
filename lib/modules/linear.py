@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from lib.modules.pixelfly import butterfly_matmul, get_butterfly_indices
+from lib.modules.pixelfly import butterfly_matmul, get_butterfly_indices, butterfly_matmul_backward
 
 
 class SharedMatrix(nn.Module):
@@ -109,13 +109,9 @@ class SemiSharedLinear(nn.Linear):
         return self.shared_matrix.weight
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        output = self.shared_matrix(input, ignore_lowrank=True)  # we apply low-rank components manually below
-        lowrank_first, lowrank_second = self.get_combined_lowrank_components()
-        if lowrank_first is not None:
-            output = F.linear(F.linear(input, lowrank_first), lowrank_second, output)
-        if self.bias is not None:
-            output += self.bias
-        return output
+        return _GeneralizedLinear.apply(
+            input, self.weight, self.bias, *self.get_combined_lowrank_components(),
+            self.shared_matrix.forward_indices, self.shared_matrix.backward_indices)
 
 
 class _GeneralizedLinear(torch.autograd.Function):
@@ -159,7 +155,7 @@ class _GeneralizedLinear(torch.autograd.Function):
 
     @staticmethod
     def _backward_impl(grad_output: torch.Tensor, *saved_tensors: torch.Tensor, needs_input_grad: Sequence[bool]):
-        grad_input = grad_main_weight = grad_lowrank_first = grad_lowrank_second = grad_bias = None
+        grad_input = grad_input_flat = grad_main_weight = grad_lowrank_first = grad_lowrank_second = grad_bias = None
         input, lowrank_hid, main_weight, lowrank_first, lowrank_second, backward_indices = saved_tensors
 
         input_flat = input.flatten(0, -2)  # [etc, in_features]
@@ -182,15 +178,26 @@ class _GeneralizedLinear(torch.autograd.Function):
         if needs_input_grad[2]:
             grad_bias = grad_output_flat.sum(dim=0)  # [out_features]
 
-        if needs_input_grad[1]:
-            grad_main_weight = torch.matmul(grad_output_flat_transposed, input_flat)
-            # ^-- [out_features, in_features]
-        if needs_input_grad[0]:
-            grad_input_flat = torch.matmul(grad_output_flat, main_weight)
-            if lowrank_first is not None:
-                if grad_input_flat.dtype == lowrank_first.dtype == grad_lowrank_hid_flat.dtype:
-                    grad_input_flat = grad_input_flat.addmm_(grad_lowrank_hid_flat, lowrank_first)
-                else:
-                    grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first)
+        if backward_indices is None:
+            # dense shared matrix
+            if needs_input_grad[1]:
+                grad_main_weight = torch.matmul(grad_output_flat_transposed, input_flat)
+                # ^-- [out_features, in_features]
+            if needs_input_grad[0]:
+                grad_input_flat = torch.matmul(grad_output_flat, main_weight)
+        else:
+            # block-sparse shared matrix
+            grad_input_flat, grad_main_weight = butterfly_matmul_backward(
+                grad_output_flat, input_flat, main_weight, backward_indices,
+                input_requires_grad=needs_input_grad[0], weight_requires_grad=needs_input_grad[1])
+
+        if grad_input_flat is not None and lowrank_first is not None:
+            # grad w.r.t. input through low-rank components
+            assert needs_input_grad[0]
+            if grad_input_flat.dtype == lowrank_first.dtype == grad_lowrank_hid_flat.dtype:
+                grad_input_flat = grad_input_flat.addmm_(grad_lowrank_hid_flat, lowrank_first)
+            else:
+                grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first)
+        if grad_input_flat is not None:
             grad_input = grad_input_flat.view_as(input)
         return grad_input, grad_main_weight, grad_bias, grad_lowrank_first, grad_lowrank_second, None, None
