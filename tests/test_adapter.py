@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 
-from lib.modules.linear import _GeneralizedLinear
+from lib.modules.linear import _SemiSharedLinear
 
 
 def adapted_linear_naive(
@@ -26,7 +26,7 @@ def test_adapter_forward_backward():
     bias = torch.randn(4096, requires_grad=True)
     random_dir = torch.randn(3, 15, 4096)
 
-    out_ours = _GeneralizedLinear.apply(input, weight, bias, adapter_first, adapter_second)
+    out_ours = _SemiSharedLinear.apply(input, weight, bias, adapter_first, adapter_second)
     torch.sum(out_ours * random_dir).backward()
     grads_ours = tuple(tensor.grad.clone() for tensor in (input, weight, adapter_first, adapter_second, bias))
 

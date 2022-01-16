@@ -109,16 +109,16 @@ class SemiSharedLinear(nn.Linear):
         return self.shared_matrix.weight
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return _GeneralizedLinear.apply(
+        return _SemiSharedLinear.apply(
             input, self.weight, self.bias, *self.get_combined_lowrank_components(),
             self.shared_matrix.forward_indices, self.shared_matrix.backward_indices)
 
 
-class _GeneralizedLinear(torch.autograd.Function):
+class _SemiSharedLinear(torch.autograd.Function):
     @staticmethod
     @custom_fwd
     def forward(ctx, *args):
-        output, tensors_to_save = _GeneralizedLinear._forward_impl(*args)
+        output, tensors_to_save = _SemiSharedLinear._forward_impl(*args)
         ctx.save_for_backward(*tensors_to_save)
         return output
 
@@ -151,7 +151,7 @@ class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output: torch.Tensor):
-        return _GeneralizedLinear._backward_impl(grad_output, *ctx.saved_tensors, needs_input_grad=ctx.needs_input_grad)
+        return _SemiSharedLinear._backward_impl(grad_output, *ctx.saved_tensors, needs_input_grad=ctx.needs_input_grad)
 
     @staticmethod
     def _backward_impl(grad_output: torch.Tensor, *saved_tensors: torch.Tensor, needs_input_grad: Sequence[bool]):
