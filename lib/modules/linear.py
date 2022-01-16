@@ -165,7 +165,6 @@ class _GeneralizedLinear(torch.autograd.Function):
         input_flat = input.flatten(0, -2)  # [etc, in_features]
         grad_output_flat = grad_output.flatten(0, -2)  # [etc, out_features]
 
-        # part 1: reshape tensors for computation
         if lowrank_hid is not None:
             lowrank_hid_flat = lowrank_hid.flatten(0, -2)  # [etc, lowrank_dim]
         if lowrank_first is not None and (needs_input_grad[0] or needs_input_grad[3]):
@@ -173,7 +172,6 @@ class _GeneralizedLinear(torch.autograd.Function):
         if needs_input_grad[1] or needs_input_grad[4]:
             grad_output_flat_transposed = grad_output_flat.t()  # [out_features, etc]
 
-        # part 2: grad w.r.t. low-rank components only
         if needs_input_grad[4]:
             grad_lowrank_second = torch.matmul(grad_output_flat_transposed, lowrank_hid_flat)
             # ^-- [out_features, lowrank_dim]
@@ -195,4 +193,4 @@ class _GeneralizedLinear(torch.autograd.Function):
                 else:
                     grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first)
             grad_input = grad_input_flat.view_as(input)
-        return grad_input, grad_main_weight, grad_bias, grad_lowrank_first, grad_lowrank_second
+        return grad_input, grad_main_weight, grad_bias, grad_lowrank_first, grad_lowrank_second, None, None
