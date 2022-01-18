@@ -27,7 +27,7 @@ class CollaborativeHFTrainer(Trainer):
         self.data_seed = data_seed
         self.optimizer = optimizer
         self.reuse_grad_buffers = reuse_grad_buffers
-        assert torch.distributed.is_initialized() != reuse_grad_buffers, "TODO support reuse with DDP"
+        assert not torch.distributed.is_initialized() or not reuse_grad_buffers, "DDP with reuse_grad_buffers is not implemented (yet)"
         super().__init__(optimizers=(optimizer, NoOpScheduler(optimizer)), **kwargs)
 
         if self.use_amp and self.reuse_grad_buffers:
