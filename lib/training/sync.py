@@ -32,7 +32,7 @@ class SynchronizationCallback(transformers.TrainerCallback):
 
     def on_train_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         if torch.distributed.is_initialized():
-            self._sync_params_and_buffers()
+            self._maybe_sync_model_state()
 
     def on_step_end(
             self,
@@ -44,7 +44,7 @@ class SynchronizationCallback(transformers.TrainerCallback):
         control.should_log = True
         model = self.task.model
         if torch.distributed.is_initialized():
-            self._sync_params_and_buffers()
+            self._maybe_sync_model_state()
 
             self._checksum_counter += 1
             if self._checksum_counter % 100 == 0:
@@ -84,9 +84,8 @@ class SynchronizationCallback(transformers.TrainerCallback):
             raw_should_broadcast = store.get(f"_hivemind_should_broadcast_state")
             return bool(int(raw_should_broadcast))
 
-    def _sync_params_and_buffers(self):
+    def _maybe_sync_model_state(self):
         """Synchronize model params and buffers from master"""
-
         if self.state_tensors and self._should_broadcast_state():
             t_start = time.perf_counter()
             with torch.no_grad():
