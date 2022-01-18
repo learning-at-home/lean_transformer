@@ -136,9 +136,9 @@ class TrainingTaskBase:
             store = _get_default_store()
             if torch.distributed.get_rank() == AUTHORITATIVE_RANK:
                 current_epoch = self.optimizer.tracker.global_epoch
-                store.set(f"{self.__class__.__name__}.current_epoch", str(current_epoch))
+                store.set("_hivemind_current_epoch", str(current_epoch))
                 torch.distributed.barrier()
                 return current_epoch
             else:
                 torch.distributed.barrier()
-                return int(store.get(f"{self.__class__.__name__}.current_epoch"))
+                return int(store.get("_hivemind_current_epoch"))
