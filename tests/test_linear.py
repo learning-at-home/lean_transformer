@@ -21,6 +21,10 @@ def adapted_linear_naive(
 
 
 def test_semishared_linear_naive():
+    torch.manual_seed(1337)
+    torch.use_deterministic_algorithms(True)
+    rtol, atol = 1e-3, 1e-5
+
     input = torch.randn(3, 15, 1024, requires_grad=True)
     weight = torch.randn(4096, 1024, requires_grad=True)
     adapter_first = torch.randn(64, 1024, requires_grad=True)
@@ -40,10 +44,10 @@ def test_semishared_linear_naive():
 
     grads_ref = tuple(tensor.grad.clone() for tensor in (input, weight, adapter_first, adapter_second, bias))
 
-    assert torch.allclose(out_ours, out_ref)
+    assert torch.allclose(out_ours, out_ref, rtol, atol)
 
     for grad_ours, grad_ref in zip(grads_ours, grads_ref):
-        assert torch.allclose(grad_ours, grad_ref)
+        assert torch.allclose(grad_ours, grad_ref, rtol, atol)
 
 
 class ReferenceLinear(nn.Module):
@@ -76,7 +80,9 @@ class ReferenceLinear(nn.Module):
 @pytest.mark.parametrize("lowrank_dim", [0, 60])
 @pytest.mark.parametrize("block_size", [0, 8])
 def test_linear(block_size: int, lowrank_dim: int, adapter_dim: int):
+    torch.manual_seed(1337)
     torch.use_deterministic_algorithms(True)
+    rtol, atol = 1e-3, 1e-6
 
     batch_size = 4
     dim = 128
@@ -98,7 +104,7 @@ def test_linear(block_size: int, lowrank_dim: int, adapter_dim: int):
     for i in range(num_layers):
         out_our = our_ffn(out_our)
 
-    assert torch.allclose(out_our, out_ref)
+    assert torch.allclose(out_our, out_ref, rtol, atol)
 
     # test grad inputs
     obj = (out_ref * (out_ref + 1)).square().mean()
@@ -106,7 +112,7 @@ def test_linear(block_size: int, lowrank_dim: int, adapter_dim: int):
 
     obj = (out_our * (out_our + 1)).square().mean()
     (grad_our,) = torch.autograd.grad(obj, x)
-    assert torch.allclose(grad_ref, grad_our)
+    assert torch.allclose(grad_ref, grad_our, rtol, atol)
 
     # test grad params
     x = torch.rand(batch_size, dim, device="cpu", requires_grad=True)
@@ -126,4 +132,4 @@ def test_linear(block_size: int, lowrank_dim: int, adapter_dim: int):
     grad_params_our = torch.autograd.grad(obj, list(our_ffn.parameters()))
 
     for grad_ref, grad_our in zip(grad_params_ref, grad_params_our):
-        assert torch.allclose(grad_ref, grad_our)
+        assert torch.allclose(grad_ref, grad_our, rtol, atol)
