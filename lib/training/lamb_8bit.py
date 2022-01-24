@@ -195,11 +195,7 @@ class CPULAMB8Bit(Optimizer2State):
         eps: float,
         weight_decay: float,
     ) -> torch.Tensor:
-        step, block_size, chunk_size = (
-            state["step"],
-            config["block_wise"],
-            self.update_chunk_size,
-        )
+        step, block_size, chunk_size = (state["step"], config["block_wise"], self.update_chunk_size)
 
         if state["state1"].dtype != torch.uint8:
             # not quantized: update normally
@@ -215,16 +211,8 @@ class CPULAMB8Bit(Optimizer2State):
             return param_delta
         elif p_cpu.numel() <= chunk_size:
             # quantized tensor within chunk size
-            exp_avg = dequantize_blockwise(
-                state["state1"],
-                (state["absmax1"], state["qmap1"]),
-                blocksize=block_size,
-            )
-            exp_avg_sq = dequantize_blockwise(
-                state["state2"],
-                (state["absmax2"], state["qmap2"]),
-                blocksize=block_size,
-            )
+            exp_avg = dequantize_blockwise(state["state1"], (state["absmax1"], state["qmap1"]), blocksize=block_size)
+            exp_avg_sq = dequantize_blockwise(state["state2"], (state["absmax2"], state["qmap2"]), blocksize=block_size)
 
             exp_avg.mul_(beta1).add_(grad_cpu, alpha=1 - beta1)
             exp_avg_sq.mul_(beta2).addcmul_(grad_cpu, grad_cpu, value=1 - beta2)
@@ -258,10 +246,10 @@ class CPULAMB8Bit(Optimizer2State):
                     state["absmax2"][chunk_blocks],
                 )
                 if chunk_state1.storage_offset() != 0:
+                    # clone chunks to ensure that tensors do not have offsets (bnb hack, possibly no longer needed)
                     chunk_state1, chunk_state2, chunk_absmax1, chunk_absmax2 = map(
-                        torch.clone,
-                        (chunk_state1, chunk_state2, chunk_absmax1, chunk_absmax2),
-                    )  # clone chunks to ensure that tensors do not have offsets
+                        torch.clone, (chunk_state1, chunk_state2, chunk_absmax1, chunk_absmax2),
+                    )
 
                 exp_avg_chunk = dequantize_blockwise(
                     chunk_state1, (chunk_absmax1, state["qmap1"]), blocksize=block_size
