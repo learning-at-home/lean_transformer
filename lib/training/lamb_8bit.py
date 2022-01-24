@@ -169,14 +169,7 @@ class CPULAMB8Bit(Optimizer2State):
         beta1, beta2 = group["betas"]
 
         param_delta = self._update_moments_and_compute_delta(
-            state,
-            config,
-            p_cpu,
-            grad_cpu,
-            beta1,
-            beta2,
-            group["eps"],
-            group["weight_decay"],
+            state, config, p_cpu, grad_cpu, beta1, beta2, group["eps"], group["weight_decay"]
         )
         del grad_cpu  # grad_cpu is no longer needed and may be modified if self.reuse_grad_buffers
 
@@ -184,11 +177,7 @@ class CPULAMB8Bit(Optimizer2State):
         weight_norm = p_cpu.norm().clamp(0, self.clamp_value)
 
         trust_ratio = weight_norm / step_norm if weight_norm != 0 and step_norm != 0 else 1.0
-        state["weight_norm"], state["step_norm"], state["trust_ratio"] = (
-            weight_norm,
-            step_norm,
-            trust_ratio,
-        )
+        state["weight_norm"], state["step_norm"], state["trust_ratio"] = (weight_norm, step_norm, trust_ratio)
 
         # Apply bias to lr to avoid broadcast.
         bias_correction = math.sqrt(1 - beta2 ** step) / (1 - beta1 ** step) if self.bias_correction else 1
