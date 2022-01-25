@@ -96,7 +96,7 @@ def get_butterfly_indices(
 
     forward_indices = input_block_index * active_blocks_per_input + active_block_index
     backward_indices = output_block_index
-    return forward_indices, backward_indices
+    return forward_indices.to(torch.int32), backward_indices.to(torch.int64)  # dtypes tuned for max throughput
 
 
 def butterfly_factor_to_matrix(
