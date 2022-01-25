@@ -28,7 +28,7 @@ class LeanTransformerConfig(PretrainedConfig):
         adapter_dim: int = 0,
         num_attention_heads: int = 64,
         intermediate_size: int = 16384,
-        block_size: int = 256,
+        block_size: int = 0,
         lowrank_dim: int = 0,
         hidden_act: str = "gelu_new",
         hidden_act_gated: bool = False,
