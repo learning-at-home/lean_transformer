@@ -140,7 +140,7 @@ def butterfly_matmul(input: torch.Tensor, weight: torch.Tensor, forward_indices:
     input = input.flatten(0, -2)
 
     input_permuted = input.t().view(input.shape[1] // block_size, block_size, input.shape[0])
-    output_blocks = torch.bmm(weight.view(num_input_blocks, -1, block_size), input_permuted)
+    output_blocks = torch.matmul(weight.view(num_input_blocks, -1, block_size), input_permuted)
     # ^-- shape: [num_input_blocks, (active_blocks_per_input * block_size), flat_batch_dims]
 
     blocks_for_indexing = output_blocks.view(num_input_blocks * active_blocks_per_input, block_size * input.shape[0])
@@ -181,12 +181,12 @@ def butterfly_matmul_backward(
     # ^-- shape: [num_input_blocks, (active_blocks_per_input * block_size), flat_batch_dims]
 
     if input_requires_grad:
-        grad_input_permuted = torch.bmm(
+        grad_input_permuted = torch.matmul(
             weight.view(num_input_blocks, -1, block_size).permute(0, 2, 1), grad_output_blocks)
         grad_input = grad_input_permuted.flatten(0, -2).t().view(*grad_output.shape[:-1], input.shape[-1])
 
     if weight_requires_grad:
-        grad_weight = torch.bmm(
+        grad_weight = torch.matmul(
             grad_output_blocks, input_flat.t().view(num_input_blocks, block_size, flat_batch_dims).permute(0, 2, 1)
         ).view_as(weight)
 
