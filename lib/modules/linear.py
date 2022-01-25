@@ -132,19 +132,21 @@ class _SemiSharedLinear(torch.autograd.Function):
         forward_indices: Optional[torch.IntTensor],
         backward_indices: Optional[torch.IntTensor],
     ) -> Tuple[torch.Tensor, Sequence[torch.Tensor]]:
+        input_flat = input.view(-1, input.shape[-1])
         if forward_indices is not None:
-            output = butterfly_matmul(input, main_weight, forward_indices)
+            output = butterfly_matmul(input_flat, main_weight, forward_indices)
             if bias is not None:
                 output += bias
         else:
-            output = F.linear(input, main_weight, bias)
+            output = F.linear(input_flat, main_weight, bias)
 
         if lowrank_first is not None:
-            lowrank_hid = F.linear(input, lowrank_first)
-            output = F.linear(lowrank_hid, lowrank_second, output)
+            lowrank_hid = F.linear(input_flat, lowrank_first)
+            reuse_output = output if 'xla' in output.device.type else None  # TPU does not support in-place
+            output = torch.addmm(output, lowrank_hid, lowrank_second.t(), out=reuse_output)
         else:
             lowrank_hid = None
-
+        output = output.view(*input.shape[:-1], output.shape[-1])
         tensors_to_save = input, lowrank_hid, main_weight, lowrank_first, lowrank_second, backward_indices
         return output, tensors_to_save
 
@@ -194,10 +196,8 @@ class _SemiSharedLinear(torch.autograd.Function):
         if grad_input_flat is not None and lowrank_first is not None:
             # grad w.r.t. input through low-rank components
             assert needs_input_grad[0]
-            if grad_input_flat.dtype == lowrank_first.dtype == grad_lowrank_hid_flat.dtype:
-                grad_input_flat = grad_input_flat.addmm_(grad_lowrank_hid_flat, lowrank_first)
-            else:
-                grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first)
+            reuse_grad_input = grad_input_flat if 'xla' in grad_input_flat.device.type else None
+            grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first, out=reuse_grad_input)
         if grad_input_flat is not None:
             grad_input = grad_input_flat.view_as(input)
         return grad_input, grad_main_weight, grad_bias, grad_lowrank_first, grad_lowrank_second, None, None
