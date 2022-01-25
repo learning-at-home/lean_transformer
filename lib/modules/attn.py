@@ -87,8 +87,7 @@ class SimpleAttentionCore(nn.Module):
         query, key, value = map(self.transpose_for_scores, (query, key, value))
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query, key.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(query.shape[-1])
+        attention_scores = torch.matmul(query, key.transpose(-1, -2) / math.sqrt(query.shape[-1]))
 
         if attention_mask is not None:
             if isinstance(attention_mask, torch.Tensor):
