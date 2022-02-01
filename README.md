@@ -4,7 +4,7 @@ __This is a preview version:__ if you want a stable and documented version, look
 
 LeanTransformer implements a specific version of transformer with two goals in mind:
 - using as little GPU memory as possible 
-- stable training for GPT-3-sized models
+- stable training for very large models
 
 Testing for correctness:
 - ```PYTHONPATH=. pytest ./tests```
@@ -12,17 +12,17 @@ Testing for correctness:
 <details>
 <summary>Readme under construction</summary>
 
-The core philosophy of LeanTransformer is to __use grad students instead of torch.autograd__. Automatic differentiation is
- great if you want to test ideas quickly, but less so if a single training run can cost [millions](https://lambdalabs.com/blog/demystifying-gpt-3/).
+The core philosophy of LeanTransformer is to __replace torch.autograd with grad students__. Automatic differentiation is
+ great if you want to test ideas quickly, less so if a single training run can cost [millions](https://lambdalabs.com/blog/demystifying-gpt-3/).
 
 <details>
 <summary>Related work: GSO</summary>
 
 Our implementation partially replaces automatic differentiation with Grad Student Optimization (GSO) - a biologically inspired black box optimization algorithm.
-Prior work (Chom et al) successfully adopted GSO for [hyperparameter tuning](https://twitter.com/carlos_ciller/status/749976860411498496)
+The widespread adoption of GSO can be explained by its [strong theoretical foundations](https://phdcomics.com/comics/archive.php?comicid=1126)
+and unparalleled [cost efficiency](https://phdcomics.com/comics.php?f=1338) (Chom et al).
+Previous works have successfully adopted GSO for [hyperparameter tuning](https://twitter.com/carlos_ciller/status/749976860411498496)
  and [ill-posed problems](https://encyclopediaofmath.org/wiki/Ill-posed_problems).
-GSO has a [strong theoretical foundation](https://phdcomics.com/comics/archive.php?comicid=1126)
-and unparalleled [cost efficiency](https://phdcomics.com/comics.php?f=1338).
 To the best of our knowledge we are the first work to successfully
 apply **distributed fault-tolerant GSO** for optimizing the memory footprint of transformers. We summarize our findings below:
 </details>
