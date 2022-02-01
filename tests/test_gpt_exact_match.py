@@ -1,12 +1,14 @@
 import json
+import os.path
 
 import torch
 from tqdm import trange
 
 from lib.models.gpt import LeanGPTConfig, LeanGPTForPreTraining
+HERE = os.path.abspath(os.path.dirname(__file__)) + '/'
 
 
-def test_gpt_forward_backward(filename: str = "./gpt_test_data.pth"):
+def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
     """
     tests the correctness model outputs, loss and gradients for a small GPT model with all the features:
     - rotary embeddings
@@ -42,7 +44,9 @@ def test_gpt_forward_backward(filename: str = "./gpt_test_data.pth"):
             f"Grad w.r.t. {name} does not match reference"
 
 
-def generate_gpt_test_data(filename: str = "./gpt_test_data.pth", num_steps: int = 250, loss_threshold: float = 1.0):
+def generate_gpt_test_data(
+        filename: str = HERE + "gpt_test_data.pth", num_steps: int = 250, loss_threshold: float = 1.0
+):
     torch.manual_seed(1337)
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
