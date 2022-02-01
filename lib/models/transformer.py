@@ -21,7 +21,7 @@ class LeanTransformerConfig(PretrainedConfig):
     def __init__(
         self,
         hidden_size: int = 4096,
-        num_hidden_layers: int = 4096,
+        num_hidden_layers: int = 32,
         num_hidden_groups: Optional[int] = None,
         num_inner_groups: int = 1,
         share_large_matrices: bool = False,
