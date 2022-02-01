@@ -28,7 +28,7 @@ apply **distributed fault-tolerant GSO** for optimizing the memory footprint of 
 </details>
 
 __Memory saving features:__
-- __[default]__ manual memory-efficient differentiation for FFN and attention layers
+- __[default]__ manual memory-efficient differentiation for feedforward layers
 - __[option]__ gradient checkpointing [(Griewank et al, ](https://dl.acm.org/doi/10.1145/347837.347846) [Chen et al, 2016)](https://arxiv.org/pdf/1604.06174.pdf)
 - __[option]__ reversible layers using ClashLuke's [revlib](https://github.com/clashluke/revlib), based on [(Gomez et al, 2017, ](https://proceedings.neurips.cc/paper/2017/file/f9be311e65d81a9ad8150a60844bb94c-Paper.pdf) [Kitaev et al, 2020)](https://arxiv.org/abs/2001.04451)
 - __[option]__ PixelFly block-sparse layers that significantly reduce the number of parameters [(Chen et al, 2021)](https://arxiv.org/abs/2112.00029)
