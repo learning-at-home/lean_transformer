@@ -34,7 +34,7 @@ class CollaborativeArguments:
         default=True,
         metadata={"help": "Whether or not to run gradient averaging in background"},
     )
-    average_state_every: int = field(default=10, metadata={"help": "Average parameters every this many epochs"})
+    average_state_every: int = field(default=5, metadata={"help": "Average parameters every this many epochs"})
     reuse_grad_buffers: bool = field(
         default=True,
         metadata={
