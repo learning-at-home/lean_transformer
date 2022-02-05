@@ -9,8 +9,8 @@ from transformers import TrainingArguments
 
 from arguments import TrainingPeerArguments
 from lib.training.sync import SynchronizationCallback
-from tasks.base import TrainingTaskBase
 from lib.utils import LocalMetrics, logger
+from tasks.base import TrainingTaskBase
 
 
 class CollaborativeCallback(SynchronizationCallback):
