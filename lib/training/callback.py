@@ -131,6 +131,14 @@ class CollaborativeCallback(SynchronizationCallback):
             self.task.model.load_state_dict(state["model"], strict=False)
             self.optimizer.load_state_dict(state["training"])
             self.optimizer.state_averager.scheduler.load_state_dict(state["scheduler"])
+
+            if self.optimizer.offload_optimizer:
+                state_averager = self.optimizer.state_averager
+                offloaded_parameters = [param for group in state_averager.optimizer.param_groups for param in group["params"]]
+                assert len(offloaded_parameters) == len(state_averager.main_parameters)
+                for main_param, offloaded_param in zip(state_averager.main_parameters, offloaded_parameters):
+                    offloaded_param.copy_(main_param, non_blocking=True)
+
             self.optimizer.state_averager.local_epoch = backup_epoch
 
             if not self.optimizer.client_mode:
