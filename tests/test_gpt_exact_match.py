@@ -41,9 +41,8 @@ def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
     assert torch.allclose(output["logits"], test_data["logits"], rtol=rtol, atol=atol), "Logits do not match reference"
     for name, param in model.named_parameters():
         assert param.grad is not None, f"Param {name} has no grad"
-        assert torch.allclose(
-            param.grad, test_data["grads"][name], rtol=rtol, atol=atol
-        ), f"Grad w.r.t. {name} does not match reference"
+        assert torch.allclose(param.grad, test_data["grads"][name], rtol=rtol, atol=atol), \
+            f"Grad w.r.t. {name} does not match reference"
 
 
 def generate_gpt_test_data(
@@ -67,7 +66,7 @@ def generate_gpt_test_data(
       "block_size": 8,
       "lowrank_dim": 60,
       "adapter_dim": 4,
-      "share_large_matrices": 1,
+      "share_large_matrices": true,
       "reversible": true,
       "hidden_act": "gelu_new",
       "hidden_act_gated": true,

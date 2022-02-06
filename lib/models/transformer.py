@@ -21,16 +21,18 @@ class LeanTransformerConfig(PretrainedConfig):
     :param num_attention_heads: number of heads in each attention layer, as defined in the original transformer
 
     :param num_hidden_layers: the total number of layers before sharing
+    :param reversible: if True, use reversible layer order as defined ReFormer ( arXiv:2001.04451 ). This dramatically
+      reduces memory usage, but slightly increases computation for the backward pass (same as in gradient checkpoints)
+
     :param num_hidden_groups: number of ALBERT-like layer groups with independent parameters
     :param num_inner_groups: by default, each layer group contains one attention and one FFN layer. Setting this to
       more than 1 will result in multiple (attn, ffn) pairs stacked on top of each other in each of num_hidden_groups
 
-    :param reversible: if True, use reversible layer order as defined ReFormer ( arXiv:2001.04451 ). This dramatically
-      reduces memory usage, but slightly increases computation for the backward pass (same as in gradient checkpoints)
-
-    :share_large_matrices: False / True or an integer. False means all ffn and attention layers are independent.
+    :param share_large_matrices: False / True or an integer. False means all ffn and attention layers are independent.
       if True, layers reuse a set of shared matrices (e.g. one for all QKV attentions, another for all FFN projections)
       if an integer, use this number of sets of shared matrices (consecutive, each is num_hidden_layers // num_matrices)
+    :param num_inner_matrices: if sharing is used, this enables using several interleaved shared matrices per set
+
     :param adapter_dim: if share_large_matrices is used, each layer can make LoRA-like adapters to the shared matrices.
       The adapter_dim corresponds to a hidden dimension of that adapter (see arXiv:2106.09685 for LoRA)
     :param block_size: if specified, replaces weight matrices in FFN and attention with block-sparse butterfly matrices,
@@ -68,6 +70,7 @@ class LeanTransformerConfig(PretrainedConfig):
         num_hidden_groups: Optional[int] = None,
         num_inner_groups: int = 1,
         share_large_matrices: int = 0,
+        num_inner_matrices: int = 1,
         adapter_dim: int = 0,
         num_attention_heads: int = 64,
         intermediate_size: int = 16384,
@@ -99,8 +102,14 @@ class LeanTransformerConfig(PretrainedConfig):
         self.total_num_layer_groups = self.num_hidden_groups * self.num_inner_groups
 
         assert isinstance(share_large_matrices, (bool, int)) and share_large_matrices >= 0
+        assert num_inner_matrices <= 1 or share_large_matrices, \
+            "inner_shared_matrices is only used if share_large_matrices >= 1"
         self.share_large_matrices = bool(share_large_matrices)
-        self.num_matrix_sets = int(share_large_matrices) if share_large_matrices else self.total_num_layer_groups
+        self.num_shared_matrices = int(share_large_matrices) if share_large_matrices else self.total_num_layer_groups
+        self.num_inner_matrices = num_inner_matrices
+        self.total_shared_matrix_sets = self.share_large_matrices * self.num_inner_matrices
+        assert self.total_shared_matrix_sets <= self.total_num_layer_groups, \
+            f"there are {self.total_shared_matrix_sets} but only {self.total_num_layer_groups} layers to share among"
 
         self.num_attention_heads = num_attention_heads
         self.hidden_act = hidden_act
@@ -160,7 +169,11 @@ class LeanTransformerConfig(PretrainedConfig):
     def get_linear_layer(self, key: str, index: int, in_features: int, out_features: int, bias: bool) -> nn.Linear:
         if not self.share_large_matrices and self.adapter_dim != 0:
             raise ValueError("not sharing matrices => adapter_dim should be 0. Use lowrank_dim instead.")
-        matrix_index = (index * self.num_matrix_sets) // self.total_num_layer_groups
+
+        matrix_outer_index = (index * self.num_shared_matrices) // self.total_num_layer_groups
+        matrix_inner_index = index % self.num_inner_matrices
+        matrix_index = matrix_outer_index * self.num_inner_matrices + matrix_inner_index
+
         weight_matrix = self.get_weight_matrix(key, matrix_index)
         assert tuple(weight_matrix.shape) == (out_features, in_features)
         return GeneralizedLinear(weight_matrix, self.adapter_dim, bias)
@@ -174,7 +187,7 @@ class LeanTransformerConfig(PretrainedConfig):
         :param index: an index of a shared matrix set, if there is more than one
         :note: even if index is not used in this function, it is necessary to ensure that lru_cache works correctly
         """
-        assert 0 <= index <= self.num_matrix_sets
+        assert 0 <= index <= self.total_shared_matrix_sets
         if key == "self_attn_qkv":
             return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.block_size, self.lowrank_dim)
         if key == "self_attn_out":
