@@ -19,7 +19,13 @@ class GeneralizedMatrix(nn.Module):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
 
-        if block_size:
+        if block_size == 0:
+            # fully-connected weight matrix
+            self.weight = nn.Parameter(torch.empty(out_features, in_features))
+            nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+            # note: this is usually overwritten by the model-wide initialization
+            self.forward_indices = self.backward_indices = None
+        else:
             # block-sparse weights with additive butterfly pattern
             forward_indices, backward_indices = get_butterfly_indices(
                 out_features, in_features, block_size, stretch=False
@@ -28,21 +34,14 @@ class GeneralizedMatrix(nn.Module):
             self.register_buffer("backward_indices", backward_indices)
             active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
             self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
-            nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
-            # note: the init std is based on SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2)
-            # it may be overwritten by model-level parameter "initializer_range"
-        else:
-            # fully-connected weight matrix
-            self.weight = nn.Parameter(torch.empty(out_features, in_features))
-            nn.init.normal_(self.weight, std=math.sqrt(2. / (5 * min(out_features, in_features))))
-            self.forward_indices = self.backward_indices = None
+            torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+            # note: this is usually overwritten by the model-wide init
 
         if lowrank_dim:
             self.lowrank_first = nn.Parameter(torch.zeros(lowrank_dim, self.in_features))
             self.lowrank_second = nn.Parameter(torch.zeros(self.out_features, lowrank_dim))
             nn.init.normal_(self.lowrank_first, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
             nn.init.normal_(self.lowrank_second, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
-
         else:
             self.lowrank_first = self.lowrank_second = None
 
