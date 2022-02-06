@@ -43,10 +43,9 @@ class LeanTransformerConfig(PretrainedConfig):
        as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
        more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
 
-
     :param hidden_dropout_prob: dropout applied to the outputs of each attention and FFN layer right before residual;
     :param attention_probs_dropout_prob: if specified, randomly prevent attention head from drop looking at some tokens;
-    :note: Lan et al ( arXiv:1909.11942 ) recommend *disabling* Dropout for pre-training and re-enabling for fine-tuning
+    :note: Lan et al. ( arXiv:1909.11942 ) *disable* Dropout for pre-training, then re-enable it for fine-tuning
 
     :param layer_norm_eps: see layer_norm_eps in torch.nn.functional.layer_norm
     :param position_embedding_type: either "absolute" (as in BERT) or "rotary" (arXiv:2104.09864 , used in GPT-J-6B)
@@ -206,6 +205,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
 
 class LeanTransformer(nn.Module):
+    """A generic transformer that does not hog your GPU memory; see gpt.py and albert.py for usage examples"""
     def __init__(self, config: LeanTransformerConfig):
         super().__init__()
         self.config = config
@@ -284,7 +284,7 @@ class LeanTransformer(nn.Module):
 
 
 class GradientCheckpointingMixin:
-    supports_gradient_checkpointing = True
+    supports_gradient_checkpointing: bool = True
 
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
         if isinstance(module, LeanTransformer):
