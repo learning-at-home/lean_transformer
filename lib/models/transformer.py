@@ -107,7 +107,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.share_large_matrices = bool(share_large_matrices)
         self.num_shared_matrices = int(share_large_matrices) if share_large_matrices else self.total_num_layer_groups
         self.num_inner_matrices = num_inner_matrices
-        self.total_shared_matrix_sets = self.share_large_matrices * self.num_inner_matrices
+        self.total_shared_matrix_sets = self.num_shared_matrices * self.num_inner_matrices
         assert self.total_shared_matrix_sets <= self.total_num_layer_groups, \
             f"there are {self.total_shared_matrix_sets} but only {self.total_num_layer_groups} layers to share among"
 
