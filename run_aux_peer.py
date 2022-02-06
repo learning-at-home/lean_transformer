@@ -10,8 +10,8 @@ from hivemind.utils.logging import get_logger, use_hivemind_log_handler
 from huggingface_hub import Repository
 from transformers import HfArgumentParser
 
-from lib import utils
 from arguments import AuxiliaryPeerArguments, CollaborativeArguments, HFTrainerArguments
+from lib import utils
 from tasks.gpt.task import CausalLMTask
 
 transformers.utils.logging.set_verbosity_warning()

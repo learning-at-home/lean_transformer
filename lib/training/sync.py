@@ -3,12 +3,12 @@ from typing import Sequence
 
 import torch
 import transformers
+from hivemind.utils import get_logger
 from torch.distributed.distributed_c10d import _get_default_group, _get_default_store
 from transformers import TrainerControl, TrainerState, TrainingArguments
 
 import arguments
 import tasks
-from hivemind.utils import get_logger
 
 AUTHORITATIVE_RANK = 0
 BROADCAST_BUFFER_SIZE: int = 250 * 1024 * 1024

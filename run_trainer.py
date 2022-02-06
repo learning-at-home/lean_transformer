@@ -9,8 +9,8 @@ import transformers
 from hivemind.utils.logging import get_logger, use_hivemind_log_handler
 from transformers import HfArgumentParser
 
-from lib import utils
 from arguments import CollaborativeArguments, HFTrainerArguments, TrainingPeerArguments
+from lib import utils
 from lib.training.callback import CollaborativeCallback
 from lib.training.hf_trainer import CollaborativeHFTrainer, NOPtimizer
 from lib.training.sync import SynchronizationCallback, is_main_process

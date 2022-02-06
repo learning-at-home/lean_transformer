@@ -7,8 +7,8 @@ import wandb
 from hivemind.utils.logging import get_logger, use_hivemind_log_handler
 from transformers import HfArgumentParser
 
-from lib import utils
 from arguments import CollaborativeArguments, TPUTrainerArguments, TrainingPeerArguments
+from lib import utils
 from lib.training.callback import CollaborativeCallback
 from lib.training.tpu import TPUManager
 from tasks.mlm.task import MLMTrainingTask
