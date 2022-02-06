@@ -52,8 +52,11 @@ class LeanTransformerConfig(PretrainedConfig):
     :param position_embedding_type: either "absolute" (as in BERT) or "rotary" (arXiv:2104.09864 , used in GPT-J-6B)
     :param max_position_embeddings: maximum sequence length, used only if position_embedding_type is "absolute"
     :param rotary_embedding_base: base for computing the rotation periods, only if position_embedding_type is "rotary"
+
     :param initializer_range: standard deviation for gaussian noise used when initializing weight matrices, defaults
      to SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2) = sqrt(2 / (5 * hidden_size))
+    :note: the initialized range is **not** applied by default, it requires calling model.apply(model.init_weights)!
+
     :param kwargs: additional keyword arguments used by base PretrainedModel in huggingface transformers
 
     """
