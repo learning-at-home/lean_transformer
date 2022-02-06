@@ -91,10 +91,7 @@ class CollaborativeCallback(SynchronizationCallback):
                         expiration_time=hivemind.get_dht_time() + self.statistics_expiration,
                         return_future=True,
                     )
-                if (
-                    self.backup_every_epochs is not None
-                    and self.optimizer.local_epoch % self.backup_every_epochs == 0
-                ):
+                if self.backup_every_epochs is not None and self.optimizer.local_epoch % self.backup_every_epochs == 0:
                     self.backup_state()
 
         self.samples = self.optimizer.grad_averager.local_samples_accumulated
@@ -134,7 +131,9 @@ class CollaborativeCallback(SynchronizationCallback):
 
             if self.optimizer.offload_optimizer:
                 state_averager = self.optimizer.state_averager
-                offloaded_parameters = [param for group in state_averager.optimizer.param_groups for param in group["params"]]
+                offloaded_parameters = [
+                    param for group in state_averager.optimizer.param_groups for param in group["params"]
+                ]
                 assert len(offloaded_parameters) == len(state_averager.main_parameters)
                 for main_param, offloaded_param in zip(state_averager.main_parameters, offloaded_parameters):
                     offloaded_param.copy_(main_param, non_blocking=True)

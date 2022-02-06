@@ -35,11 +35,11 @@ class SynchronizationCallback(transformers.TrainerCallback):
             self._maybe_sync_model_state()
 
     def on_step_end(
-            self,
-            args: TrainingArguments,
-            state: transformers.TrainerState,
-            control: transformers.TrainerControl,
-            **kwargs,
+        self,
+        args: TrainingArguments,
+        state: transformers.TrainerState,
+        control: transformers.TrainerControl,
+        **kwargs,
     ):
         control.should_log = True
         model = self.task.model
@@ -61,7 +61,7 @@ class SynchronizationCallback(transformers.TrainerCallback):
     def _compute_state_version(self) -> int:
         """return a non-decreasing integer that goes up whenever model params and/or buffers were updated"""
         assert self.is_master
-        return sum(state['step'] for state in self.task.optimizer.opt.state.values())
+        return sum(state["step"] for state in self.task.optimizer.opt.state.values())
 
     def _should_broadcast_state(self):
         store = _get_default_store()
