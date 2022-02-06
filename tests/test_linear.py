@@ -5,7 +5,7 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from lib.modules.linear import SemiSharedLinear, SharedMatrix, _SemiSharedLinear
+from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
 
 
 def adapted_linear_naive(
@@ -32,7 +32,7 @@ def test_semishared_linear_naive():
     bias = torch.randn(4096, requires_grad=True)
     random_dir = torch.randn(3, 15, 4096)
 
-    out_ours = _SemiSharedLinear.apply(input, weight, bias, adapter_first, adapter_second, None, None)
+    out_ours = _GeneralizedLinear.apply(input, weight, bias, adapter_first, adapter_second, None, None)
     torch.sum(out_ours * random_dir).backward()
     grads_ours = tuple(tensor.grad.clone() for tensor in (input, weight, adapter_first, adapter_second, bias))
 
@@ -51,7 +51,7 @@ def test_semishared_linear_naive():
 
 
 class ReferenceLinear(nn.Module):
-    def __init__(self, shared_matrix: SharedMatrix, adapter_dim: int = 0, bias: bool = True):
+    def __init__(self, shared_matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
         self.shared_matrix = shared_matrix
         self.out_features, self.in_features = self.shared_matrix.shape
@@ -88,8 +88,8 @@ def test_linear(block_size: int, lowrank_dim: int, adapter_dim: int):
     dim = 128
     num_layers = 4
 
-    baseline_ffn = ReferenceLinear(SharedMatrix(dim, dim, block_size, lowrank_dim), adapter_dim)
-    our_ffn = SemiSharedLinear(SharedMatrix(dim, dim, block_size, lowrank_dim), adapter_dim)
+    baseline_ffn = ReferenceLinear(GeneralizedMatrix(dim, dim, block_size, lowrank_dim), adapter_dim)
+    our_ffn = GeneralizedLinear(GeneralizedMatrix(dim, dim, block_size, lowrank_dim), adapter_dim)
 
     assert our_ffn.load_state_dict(baseline_ffn.state_dict())
 

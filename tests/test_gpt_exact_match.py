@@ -65,7 +65,7 @@ def generate_gpt_test_data(
       "block_size": 8,
       "lowrank_dim": 60,
       "adapter_dim": 4,
-      "share_large_matrices": true,
+      "share_large_matrices": 1,
       "reversible": true,
       "hidden_act": "gelu_new",
       "hidden_act_gated": true,

@@ -9,7 +9,7 @@ from transformers.modeling_outputs import BaseModelOutput
 
 from lib.modules import LeanFFN, LeanSelfAttention
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
-from lib.modules.linear import SemiSharedLinear, SharedMatrix
+from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix
 from lib.modules.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
 
 
@@ -24,7 +24,7 @@ class LeanTransformerConfig(PretrainedConfig):
         num_hidden_layers: int = 32,
         num_hidden_groups: Optional[int] = None,
         num_inner_groups: int = 1,
-        share_large_matrices: bool = False,
+        share_large_matrices: int = 0,
         adapter_dim: int = 0,
         num_attention_heads: int = 64,
         intermediate_size: int = 16384,
@@ -46,7 +46,6 @@ class LeanTransformerConfig(PretrainedConfig):
         super().__init__(**kwargs)
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
-        self.share_large_matrices = share_large_matrices
         self.adapter_dim = adapter_dim
         self.lowrank_dim = lowrank_dim
         self.block_size = block_size
@@ -54,6 +53,11 @@ class LeanTransformerConfig(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
         self.num_inner_groups = num_inner_groups
+        self.total_num_layer_groups = self.num_hidden_groups * self.num_inner_groups
+
+        assert isinstance(share_large_matrices, (bool, int)) and share_large_matrices >= 0
+        self.share_large_matrices = bool(share_large_matrices)
+        self.num_matrix_sets = int(share_large_matrices) if share_large_matrices else self.total_num_layer_groups
 
         self.num_attention_heads = num_attention_heads
         self.hidden_act = hidden_act
@@ -110,41 +114,41 @@ class LeanTransformerConfig(PretrainedConfig):
     def get_token_type_embeddings(self) -> Optional[nn.Embedding]:
         return nn.Embedding(self.type_vocab_size, self.embedding_size) if self.type_vocab_size else None
 
-    def get_linear_layer(self, key: str, in_features: int, out_features: int, bias: bool):
-        assert self.adapter_dim == 0 or self.share_large_matrices, "not sharing matrices => adapter_dim should be 0"
-        if not self.share_large_matrices and self.block_size == 0:
-            return nn.Linear(in_features, out_features, bias)
+    def get_linear_layer(self, key: str, index: int, in_features: int, out_features: int, bias: bool) -> nn.Linear:
+        if not self.share_large_matrices and self.adapter_dim != 0:
+            raise ValueError("not sharing matrices => adapter_dim should be 0. Use lowrank_dim instead.")
+        matrix_index = (index * self.num_matrix_sets) // self.total_num_layer_groups
+        weight_matrix = self.get_weight_matrix(key, matrix_index)
+        assert tuple(weight_matrix.shape) == (out_features, in_features)
+        return GeneralizedLinear(weight_matrix, self.adapter_dim, bias)
 
-        elif self.share_large_matrices:
-            shared_matrix = self.get_shared_matrix(key)
-            assert tuple(shared_matrix.shape) == (out_features, in_features)
-            return SemiSharedLinear(shared_matrix, self.adapter_dim, bias)
+    @lru_cache(maxsize=None)
+    def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:
+        """
+        Create a weight matrix for use in transformer layers, optionally use block-wise sparsity
 
-        else:
-            assert not self.share_large_matrices and self.block_size > 0 and self.adapter_dim == 0
-            shared_matrix = SharedMatrix(in_features, out_features, self.block_size, self.lowrank_dim)
-            return SemiSharedLinear(shared_matrix, self.adapter_dim, bias)  # not actually shared
-
-    @lru_cache()
-    def get_shared_matrix(self, key: str) -> Optional[SharedMatrix]:
-        assert self.share_large_matrices
+        :param key: a string identifier of matrix within a transformer layer, e.g. "self_attn_qkv"
+        :param index: an index of a shared matrix set, if there is more than one
+        :note: even if index is not used in this function, it is necessary to ensure that lru_cache works correctly
+        """
+        assert 0 <= index <= self.num_matrix_sets
         if key == "self_attn_qkv":
-            return SharedMatrix(self.hidden_size, self.hidden_size * 3, self.block_size, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.block_size, self.lowrank_dim)
         if key == "self_attn_out":
-            return SharedMatrix(self.hidden_size, self.hidden_size, self.block_size, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.block_size, self.lowrank_dim)
         if key == "ffn_first":
-            return SharedMatrix(self.hidden_size, self.intermediate_size * (2 if self.hidden_act_gated else 1),
-                                self.block_size, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.intermediate_size * (2 if self.hidden_act_gated else 1),
+                                     self.block_size, self.lowrank_dim)
         if key == "ffn_second":
-            return SharedMatrix(self.intermediate_size, self.hidden_size, self.block_size, self.lowrank_dim)
+            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.block_size, self.lowrank_dim)
 
-        raise NotImplementedError(f"Unexpected SharedMatrix key: {key}")
+        raise NotImplementedError(f"Unexpected matrix key: {key}")
 
     def init_weights(self, module: nn.Module):
         """Initialize the weights."""
-        if isinstance(module, SharedMatrix):
+        if isinstance(module, GeneralizedMatrix):
             module.weight.data.normal_(mean=0.0, std=self.initializer_range)
-        elif isinstance(module, SemiSharedLinear):
+        elif isinstance(module, GeneralizedLinear):
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.Linear):
@@ -166,9 +170,17 @@ class LeanTransformer(nn.Module):
     def __init__(self, config: LeanTransformerConfig):
         super().__init__()
         self.config = config
-        self.layer_groups = nn.ModuleList([nn.ModuleDict(dict(layers=nn.ModuleList([nn.ModuleDict(dict(
-                attention=self._make_attention(config), ffn=self._make_ffn(config)
-        )) for _ in range(config.num_inner_groups)]))) for _ in range(config.num_hidden_groups)])
+        self.layer_groups = []
+
+        self.layer_groups = nn.ModuleList()
+        for outer_index in range(config.num_hidden_groups):
+            inner_group = nn.ModuleList([])
+            for inner_index in range(config.num_inner_groups):
+                index = outer_index * config.num_inner_groups + inner_index
+                inner_group.append(nn.ModuleDict(dict(attention=self._make_attention(index, config),
+                                                      ffn=self._make_ffn(index, config))))
+            self.layer_groups.append(nn.ModuleDict(dict(layers=inner_group)))
+
         self.post_layer_norm = nn.LayerNorm(config.hidden_size, config.layer_norm_eps)
         self._sequential: Tuple[nn.Module, ...] = ()
 
@@ -184,20 +196,22 @@ class LeanTransformer(nn.Module):
             self._sequential = (sequential_cls(*sequence), )
         return self._sequential[0]
 
-    def _make_attention(self, config: LeanTransformerConfig):
+    def _make_attention(self, index: int, config: LeanTransformerConfig):
         return LeanSelfAttention(
             config.hidden_size,
             config.num_attention_heads,
             attention_core=config.get_attention_core(),
             hidden_dropout_prob=config.hidden_dropout_prob,
             layer_norm_eps=config.layer_norm_eps,
-            dense_qkv=config.get_linear_layer("self_attn_qkv", config.hidden_size, config.hidden_size * 3, bias=True),
-            dense_out=config.get_linear_layer("self_attn_out", config.hidden_size, config.hidden_size, bias=True),
+            dense_qkv=config.get_linear_layer(
+                "self_attn_qkv", index, config.hidden_size, config.hidden_size * 3, bias=True),
+            dense_out=config.get_linear_layer(
+                "self_attn_out", index, config.hidden_size, config.hidden_size, bias=True),
             sandwich_norm=config.sandwich_norm,
             residual=not config.reversible, use_checkpoint=not config.reversible
         )
 
-    def _make_ffn(self, config: LeanTransformerConfig):
+    def _make_ffn(self, index: int, config: LeanTransformerConfig):
         return LeanFFN(
             config.hidden_size,
             config.intermediate_size,
@@ -205,10 +219,10 @@ class LeanTransformer(nn.Module):
             gated=config.hidden_act_gated,
             layer_norm_eps=config.layer_norm_eps,
             dropout=config.hidden_dropout_prob,
-            dense_i2h=config.get_linear_layer(
-                "ffn_first", config.hidden_size, config.intermediate_size * (1 + config.hidden_act_gated), bias=True,
-            ),
-            dense_h2o=config.get_linear_layer("ffn_second", config.intermediate_size, config.hidden_size, bias=True),
+            dense_i2h=config.get_linear_layer("ffn_first", index, config.hidden_size,
+                                              config.intermediate_size * (1 + config.hidden_act_gated), bias=True),
+            dense_h2o=config.get_linear_layer("ffn_second", index, config.intermediate_size,
+                                              config.hidden_size, bias=True),
             sandwich_norm=config.sandwich_norm,
             residual=not config.reversible,
         )

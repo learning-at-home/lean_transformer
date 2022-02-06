@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from lib.modules.ffn import LeanFFN
-from lib.modules.linear import SemiSharedLinear, SharedMatrix
+from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix
 
 
 class SimpleFFN(nn.Module):
@@ -161,8 +161,8 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         4 * dim,
         gated=True,
         sandwich_norm=True,
-        dense_i2h=SemiSharedLinear(SharedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
-        dense_h2o=SemiSharedLinear(SharedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
+        dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
+        dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
         residual=residual
     )
     our_ffn = LeanFFN(
@@ -170,8 +170,8 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         4 * dim,
         gated=True,
         sandwich_norm=True,
-        dense_i2h=SemiSharedLinear(SharedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
-        dense_h2o=SemiSharedLinear(SharedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
+        dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
+        dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
         residual=residual
     )
     with torch.no_grad():

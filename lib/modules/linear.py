@@ -12,8 +12,8 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 from lib.modules.pixelfly import butterfly_matmul, get_butterfly_indices, butterfly_matmul_backward
 
 
-class SharedMatrix(nn.Module):
-    """A module that stores a shared pytorch tensor for use in SemiSharedLinear layers"""
+class GeneralizedMatrix(nn.Module):
+    """A module that stores a shared pytorch tensor for use in GeneralizedLinear layers"""
 
     def __init__(self, in_features: int, out_features: int, block_size: int = 0, lowrank_dim: int = 0):
         super().__init__()
@@ -68,10 +68,10 @@ class SharedMatrix(nn.Module):
         return output
 
 
-class SemiSharedLinear(nn.Linear):
+class GeneralizedLinear(nn.Linear):
     """A linear layer with a shared full-rank matrix and an individual low-rank adapter"""
 
-    def __init__(self, shared_matrix: SharedMatrix, adapter_dim: int = 0, bias: bool = True):
+    def __init__(self, shared_matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
         self.shared_matrix = shared_matrix
         self.out_features, self.in_features = self.shared_matrix.shape
@@ -88,7 +88,7 @@ class SemiSharedLinear(nn.Linear):
             self.adapter_first = self.adapter_second = None
 
     def get_combined_lowrank_components(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        """Group together low-rank matrix components from this layer's adapter and SharedMatrix for faster matmul"""
+        """Group together low-rank matrix components from this layer's adapter and GeneralizedMatrix for faster matmul"""
         if self.adapter_first is not None and self.shared_matrix.lowrank_first is None:
             return self.adapter_first, self.adapter_second
         elif self.adapter_first is None and self.shared_matrix.lowrank_first is not None:
@@ -109,16 +109,16 @@ class SemiSharedLinear(nn.Linear):
         return self.shared_matrix.weight
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return _SemiSharedLinear.apply(
+        return _GeneralizedLinear.apply(
             input, self.weight, self.bias, *self.get_combined_lowrank_components(),
             self.shared_matrix.forward_indices, self.shared_matrix.backward_indices)
 
 
-class _SemiSharedLinear(torch.autograd.Function):
+class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_fwd
     def forward(ctx, *args):
-        output, tensors_to_save = _SemiSharedLinear._forward_impl(*args)
+        output, tensors_to_save = _GeneralizedLinear._forward_impl(*args)
         ctx.save_for_backward(*tensors_to_save)
         return output
 
@@ -153,7 +153,7 @@ class _SemiSharedLinear(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output: torch.Tensor):
-        return _SemiSharedLinear._backward_impl(grad_output, *ctx.saved_tensors, needs_input_grad=ctx.needs_input_grad)
+        return _GeneralizedLinear._backward_impl(grad_output, *ctx.saved_tensors, needs_input_grad=ctx.needs_input_grad)
 
     @staticmethod
     def _backward_impl(grad_output: torch.Tensor, *saved_tensors: torch.Tensor, needs_input_grad: Sequence[bool]):

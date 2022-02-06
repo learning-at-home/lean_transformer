@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from lib.modules.linear import SemiSharedLinear, _SemiSharedLinear
+from lib.modules.linear import GeneralizedLinear, _GeneralizedLinear
 
 
 class LeanFFN(nn.Module):
@@ -49,11 +49,11 @@ class LeanFFN(nn.Module):
             sandwich_ln_weight, sandwich_ln_bias = self.sandwich_norm.weight, self.sandwich_norm.bias
         i2h_lowrank_first = i2h_lowrank_second = h2o_lowrank_first = h2o_lowrank_second = None
         i2h_forward_indices = i2h_backward_indices = h2o_forward_indices = h2o_backward_indices = None
-        if isinstance(self.dense_i2h, SemiSharedLinear):
+        if isinstance(self.dense_i2h, GeneralizedLinear):
             i2h_lowrank_first, i2h_lowrank_second = self.dense_i2h.get_combined_lowrank_components()
             i2h_forward_indices = self.dense_i2h.shared_matrix.forward_indices
             i2h_backward_indices = self.dense_i2h.shared_matrix.backward_indices
-        if isinstance(self.dense_h2o, SemiSharedLinear):
+        if isinstance(self.dense_h2o, GeneralizedLinear):
             h2o_lowrank_first, h2o_lowrank_second = self.dense_h2o.get_combined_lowrank_components()
             h2o_forward_indices = self.dense_h2o.shared_matrix.forward_indices
             h2o_backward_indices = self.dense_h2o.shared_matrix.backward_indices
@@ -137,13 +137,13 @@ class _LeanFFN(torch.autograd.Function):
 
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
 
-        pre_activation, i2h_tensors = _SemiSharedLinear._forward_impl(
+        pre_activation, i2h_tensors = _GeneralizedLinear._forward_impl(
             input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second, i2h_forward_indices, i2h_backward_indices
         )
 
         hid_act = _LeanFFN._apply_activation(pre_activation, ctx._activation, ctx._gated)
 
-        out, h2o_tensors = _SemiSharedLinear._forward_impl(
+        out, h2o_tensors = _GeneralizedLinear._forward_impl(
             hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second, h2o_forward_indices, h2o_backward_indices
         )
 
@@ -172,13 +172,13 @@ class _LeanFFN(torch.autograd.Function):
     def _h2o_backward(ctx, grad_output: torch.Tensor, hid_act: torch.Tensor):
         h2o_tensors = ctx.saved_tensors[-ctx._num_h2o_tensors + 1 :]
         needs_input_grad = (hid_act.requires_grad, *ctx.needs_input_grad[9:15])
-        return _SemiSharedLinear._backward_impl(grad_output, hid_act, *h2o_tensors, needs_input_grad=needs_input_grad)
+        return _GeneralizedLinear._backward_impl(grad_output, hid_act, *h2o_tensors, needs_input_grad=needs_input_grad)
 
     @staticmethod
     def _i2h_backward(ctx, grad_output: torch.Tensor, input_ln: torch.Tensor):
         i2h_tensors = ctx.saved_tensors[-ctx._num_i2h_tensors - ctx._num_h2o_tensors + 2 : -ctx._num_h2o_tensors + 1]
         needs_input_grad = (input_ln.requires_grad, *ctx.needs_input_grad[3:9])
-        return _SemiSharedLinear._backward_impl(grad_output, input_ln, *i2h_tensors, needs_input_grad=needs_input_grad)
+        return _GeneralizedLinear._backward_impl(grad_output, input_ln, *i2h_tensors, needs_input_grad=needs_input_grad)
 
     @staticmethod
     @custom_bwd
