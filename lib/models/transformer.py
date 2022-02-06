@@ -15,9 +15,48 @@ from lib.modules.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialW
 
 class LeanTransformerConfig(PretrainedConfig):
     r"""
-    Similar to AlbertConfig, but its a lean transformer and we didn't write its description yet
-    """
+    :param hidden_size: main hidden dimension of a transformer, used as inputs and outputs of all layers
+    :param intermediate_size: a (typically larger) hidden dimension where activation is applied
+    :param num_attention_heads: number of heads in each attention layer, as defined in the original transformer
 
+    :param num_hidden_layers: the total number of layers before sharing
+    :param num_hidden_groups: number of ALBERT-like layer groups with independent parameters
+    :param num_inner_groups: by default, each layer group contains one attention and one FFN layer. Setting this to
+      more than 1 will result in multiple (attn, ffn) pairs stacked on top of each other in each of num_hidden_groups
+
+    :param reversible: if True, use reversible layer order as defined ReFormer ( arXiv:2001.04451 ). This dramatically
+      reduces memory usage, but slightly increases computation for the backward pass (same as in gradient checkpoints)
+
+    :share_large_matrices: False / True or an integer. False means all ffn and attention layers are independent.
+      if True, layers reuse a set of shared matrices (e.g. one for all QKV attentions, another for all FFN projections)
+      if an integer, use this number of sets of shared matrices (consecutive, each is num_hidden_layers // num_matrices)
+    :param adapter_dim: if share_large_matrices is used, each layer can make LoRA-like adapters to the shared matrices.
+      The adapter_dim corresponds to a hidden dimension of that adapter (see arXiv:2106.09685 for LoRA)
+    :param block_size: if specified, replaces weight matrices in FFN and attention with block-sparse butterfly matrices,
+      as defined in the Pixelated Buttefly ( arXiv:2112.00029 ). This does not affect embeddings or attention logits.
+    :param lowrank_dim: if specified, add a (shared) low-rank component to the block-sparse matrix, as recommended
+      in the PixelFly paper ( arXiv:2112.00029 ). The difference from adapter_dim is that adapters are NOT shared.
+    :param hidden_act: activation function for FFN layers, either string or callable
+    :param gated: use gated activations based on https://arxiv.org/abs/2002.05202 and https://arxiv.org/abs/2102.11972
+      note: gated activations require 1.5x more parameters compared to their non-gated variants.
+    :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
+       as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
+       more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
+
+
+    :param hidden_dropout_prob: dropout applied to the outputs of each attention and FFN layer right before residual;
+    :param attention_probs_dropout_prob: if specified, randomly prevent attention head from drop looking at some tokens;
+    :note: Lan et al ( arXiv:1909.11942 ) recommend *disabling* Dropout for pre-training and re-enabling for fine-tuning
+
+    :param layer_norm_eps: see layer_norm_eps in torch.nn.functional.layer_norm
+    :param position_embedding_type: either "absolute" (as in BERT) or "rotary" (arXiv:2104.09864 , used in GPT-J-6B)
+    :param max_position_embeddings: maximum sequence length, used only if position_embedding_type is "absolute"
+    :param rotary_embedding_base: base for computing the rotation periods, only if position_embedding_type is "rotary"
+    :param initializer_range: standard deviation for gaussian noise used when initializing weight matrices, defaults
+     to SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2) = sqrt(2 / (5 * hidden_size))
+    :param kwargs: additional keyword arguments used by base PretrainedModel in huggingface transformers
+
+    """
     def __init__(
         self,
         hidden_size: int = 4096,
