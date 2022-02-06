@@ -201,14 +201,14 @@ class LeanTransformer(nn.Module):
             config.hidden_size,
             config.num_attention_heads,
             attention_core=config.get_attention_core(),
-            hidden_dropout_prob=config.hidden_dropout_prob,
+            dropout=config.hidden_dropout_prob,
             layer_norm_eps=config.layer_norm_eps,
             dense_qkv=config.get_linear_layer(
                 "self_attn_qkv", index, config.hidden_size, config.hidden_size * 3, bias=True),
             dense_out=config.get_linear_layer(
                 "self_attn_out", index, config.hidden_size, config.hidden_size, bias=True),
             sandwich_norm=config.sandwich_norm,
-            residual=not config.reversible, use_checkpoint=not config.reversible
+            residual=not config.reversible, checkpoint_attention_core=not config.reversible
         )
 
     def _make_ffn(self, index: int, config: LeanTransformerConfig):
@@ -233,6 +233,15 @@ class LeanTransformer(nn.Module):
 
     def init_weights(self):
         self.apply(self.config.init_weights)
+        
+    def gradient_checkpointing_enable(self, value: bool):
+        sequential = self._get_sequential()
+        assert not value or isinstance(sequential, SequentialWithKwargs), "Reversible does not need checkpoints"
+        sequential.gradient_checkpointing = value
+        for module in sequential:
+            if isinstance(module, LeanSelfAttention):
+                # disable local checkpoints if checkpointing globally -- and vice versa
+                module.checkpoint_attention_core = not value
 
 
 class GradientCheckpointingMixin:
@@ -240,10 +249,4 @@ class GradientCheckpointingMixin:
 
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
         if isinstance(module, LeanTransformer):
-            sequential = module._get_sequential()
-            assert not value or isinstance(sequential, SequentialWithKwargs), "Reversible does not need checkpoints"
-            sequential.gradient_checkpointing = value
-            for module in sequential:
-                if isinstance(module, LeanSelfAttention):
-                    # disable local checkpoints if checkpointing globally -- and vice versa
-                    module.use_checkpoint = not value
+            module.gradient_checkpointing_enable(value)

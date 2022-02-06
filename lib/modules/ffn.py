@@ -10,11 +10,22 @@ from lib.modules.linear import GeneralizedLinear, _GeneralizedLinear
 
 class LeanFFN(nn.Module):
     """
-    A transformer FFN module that doesn't hog your GPU memory.
-    Complete with pre-LayerNorm, residual connections and dropout.
+    A transformer FFN module that doesn't hog your GPU memory. Uses a manually optimized differentiation algorithm.
 
+    :param hidden_size: base hidden size of the transformer
+    :param intermediate_size: a (typically larger) hidden dimension where activation is applied
+    :param activation: a pytorch nonlinearity to use in the intermediate layer
     :param gated: use gated activations based on https://arxiv.org/abs/2002.05202 and https://arxiv.org/abs/2102.11972
       note: gated activations require 1.5x more parameters compared to their non-gated variants.
+    :param layer_norm_eps: see torch.nn.functional.layer_norm
+    :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
+       as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
+       more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
+    :param dropout: hidden dropout probability, applied to the output projection (before adding residual)
+    :param residual: if True, adds the original layer input to the final layer output
+
+    :param dense_i2h: custom *first* linear layer (hidden_size -> intermediate_size or 2x indermediate_size)
+    :param dense_h2o: custom *second* linear layer (intermediate_size -> hidden_size)
     """
 
     def __init__(
@@ -34,6 +45,8 @@ class LeanFFN(nn.Module):
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
         self.dense_i2h = nn.Linear(hidden_size, i2h_out_features) if dense_i2h is None else dense_i2h
         self.dense_h2o = nn.Linear(intermediate_size, hidden_size) if dense_h2o is None else dense_h2o
+        assert type(self.dense_i2h) in (nn.Linear, GeneralizedLinear), "only Linear and GeneralizedLinear are supported"
+        assert type(self.dense_h2o) in (nn.Linear, GeneralizedLinear), "only Linear and GeneralizedLinear are supported"
         assert self.dense_i2h.in_features == self.dense_h2o.out_features == hidden_size
         assert self.dense_i2h.out_features == i2h_out_features and self.dense_h2o.in_features == intermediate_size
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)

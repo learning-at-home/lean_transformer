@@ -13,16 +13,38 @@ class LeanSelfAttention(nn.Module):
         self,
         hidden_size: int,
         num_attention_heads: int,
-        attention_core: Optional[nn.Module] = None,
-        hidden_dropout_prob: float = 0,
+        dropout: float = 0,
         layer_norm_eps: float = 1e-12,
         sandwich_norm: bool = False,
         dense_qkv: Optional[nn.Linear] = None,
         dense_out: Optional[nn.Linear] = None,
-        residual: bool = True, use_checkpoint: bool = False,
+        residual: bool = True,
+        attention_core: Optional[nn.Module] = None,
+        checkpoint_attention_core: bool = True,
         **kwargs,
     ):
-        """Attention layer that does not hog GPU memory"""
+        """
+        Attention layer that does not hog GPU memory. Re-computes pairwise attention weights instead of storing them.
+
+        :note: this code is relatively less optimized than FFN because attention is usually not a memory bottleneck
+          for typical sequence lengths (e.g. 2048 in language or 1024 in vision). If training with longer sequences,
+          one can use query chunking: running one chunk of queries at a time, without storing the full QxK matrix.
+          This technique runs in O(length) memory instead of O(length^2), making it not-a-bottleneck compared to FFN
+
+        :param hidden_size: base hidden size of the transformer, before q/k/v projections
+        :param num_attention_heads: number of heads, as defined in the original transformer
+        :param dropout: hidden dropout probability, applied to the output projection (before adding residual)
+        :param layer_norm_eps: see torch.nn.functional.layer_norm
+        :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
+           as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
+           more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
+        :param residual: if True, adds the original layer input to the final layer output
+        :param attention_core: optionally provide custom attention function. See SimpleAttentionCore for inspiration.
+        :param checkpoint_attention_core: re-compute attention weights during backward pass instead of storing them
+        :param dense_qkv: custom QKV projection layer (hidden_size -> 3 * hidden_size)
+        :param dense_out: custom output projection layer (hidden_size -> hidden_size)
+        :param kwargs: additional kwargs are passed to the chosen attention core
+        """
         super().__init__()
         if attention_core is None:
             attention_core = SimpleAttentionCore(hidden_size, num_attention_heads, **kwargs)
@@ -38,8 +60,8 @@ class LeanSelfAttention(nn.Module):
 
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.sandwich_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if sandwich_norm else None
-        self.output_dropout = nn.Dropout(hidden_dropout_prob, inplace=False)
-        self.residual, self.use_checkpoint = residual, use_checkpoint
+        self.output_dropout = nn.Dropout(dropout, inplace=False)
+        self.residual, self.checkpoint_attention_core = residual, checkpoint_attention_core
 
     def forward(self, hidden_states, attention_mask=None, output_attentions=False):
         hidden_states_ln = self.layer_norm(hidden_states)
@@ -57,7 +79,7 @@ class LeanSelfAttention(nn.Module):
         return (outputs, attention_probs) if output_attentions else (outputs,)
 
     def _maybe_checkpoint(self, func, *args):
-        return checkpoint(func, *args) if torch.is_grad_enabled() and self.use_checkpoint else func(*args)
+        return checkpoint(func, *args) if torch.is_grad_enabled() and self.checkpoint_attention_core else func(*args)
 
 
 class SimpleAttentionCore(nn.Module):
