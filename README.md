@@ -1,16 +1,20 @@
 ### A transformer that does not hog your GPU memory
 
-__This is a preview version:__ if you want a stable and documented version, look at [CALM](https://github.com/NCAI-Research/CALM) instead.
+__This is an early in-development codebase:__ if you want a stable and documented hivemind codebase, look at [CALM](https://github.com/NCAI-Research/CALM) or [dalle-hivemind](https://github.com/learning-at-home/dalle-hivemind).
 
 LeanTransformer implements a specific version of transformer with two goals in mind:
 - using as little GPU memory as possible 
 - stable training for very large models
 
-Testing for correctness:
-- ```PYTHONPATH=. pytest ./tests```
+**LeanTransformer is batch-first, i.e. it requires `[batch, length, hid_size]` tensors.**
+
+- Testing for correctness: ```PYTHONPATH=. pytest ./tests```
+
 
 <details>
 <summary>Readme under construction</summary>
+
+
 
 The core philosophy of LeanTransformer is to __replace torch.autograd with grad students__. Automatic differentiation is
  great if you want to test ideas quickly, less so if a single training run [can cost over $4 million](https://lambdalabs.com/blog/demystifying-gpt-3/) (or [>1000 years in grad school](https://studyinrussia.ru/en/study-in-russia/cost-of-education-in-russia/)).
