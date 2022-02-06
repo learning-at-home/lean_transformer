@@ -141,7 +141,7 @@ class _GeneralizedLinear(torch.autograd.Function):
 
         if lowrank_first is not None:
             lowrank_hid = F.linear(input_flat, lowrank_first)
-            reuse_output = output if 'xla' in output.device.type else None  # TPU does not support in-place
+            reuse_output = output if "xla" in output.device.type else None  # TPU does not support in-place
             output = torch.addmm(output, lowrank_hid, lowrank_second.t(), out=reuse_output)
         else:
             lowrank_hid = None
@@ -195,7 +195,7 @@ class _GeneralizedLinear(torch.autograd.Function):
         if grad_input_flat is not None and lowrank_first is not None:
             # grad w.r.t. input through low-rank components
             assert needs_input_grad[0]
-            reuse_grad_input = grad_input_flat if 'xla' in grad_input_flat.device.type else None
+            reuse_grad_input = grad_input_flat if "xla" in grad_input_flat.device.type else None
             grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first, out=reuse_grad_input)
         if grad_input_flat is not None:
             grad_input = grad_input_flat.view_as(input)

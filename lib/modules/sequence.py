@@ -18,6 +18,7 @@ class ActiveKwargs(nn.Module):
     A module with selective kwargs, compatible with sequential, gradient checkpoints and
     Usage: ony use this as a part of SequentialWithKwargs or ReversibleWithKwargs
     """
+
     def __init__(self, module: nn.Module, active_keys: Sequence[str], use_first_output: bool = False):
         super().__init__()
         self.module, self.active_keys, self.use_first_output = module, set(active_keys), use_first_output
@@ -33,8 +34,9 @@ class ActiveKwargs(nn.Module):
 class SequentialWithKwargs(nn.Sequential):
     def __init__(self, *modules: ActiveKwargs):
         for module in modules:
-            assert isinstance(module, ActiveKwargs) or \
-                   (isinstance(module, ReversibleModule) and isinstance(module.wrapped_module, ActiveKwargs))
+            assert isinstance(module, ActiveKwargs) or (
+                isinstance(module, ReversibleModule) and isinstance(module.wrapped_module, ActiveKwargs)
+            )
         super().__init__(*modules)
         self.gradient_checkpointing = False
 
@@ -50,15 +52,16 @@ class SequentialWithKwargs(nn.Sequential):
 
     def _checkpoint_forward(self, module: Callable, input: torch.Tensor, kwarg_keys: Sequence[str], *etc):
         kwargs = {key: etc[i] for i, key in enumerate(kwarg_keys)}
-        args = etc[len(kwarg_keys):]
+        args = etc[len(kwarg_keys) :]
         return module(input, *args, **kwargs)
 
 
 class ReversibleWithKwargs(ReversibleSequential):
     def __init__(self, *modules, **kwargs):
         for module in modules:
-            assert isinstance(module, ActiveKwargs) or \
-                   (isinstance(module, ReversibleModule) and isinstance(module.wrapped_module, ActiveKwargs))
+            assert isinstance(module, ActiveKwargs) or (
+                isinstance(module, ReversibleModule) and isinstance(module.wrapped_module, ActiveKwargs)
+            )
         super().__init__(*modules, **kwargs)
         self.stem = SequentialWithKwargs(*self.stem)
 
@@ -72,5 +75,3 @@ class ReversibleWithKwargs(ReversibleSequential):
         # out0 = input + g1 + g2 + ... + gn  -- a sum of all even modules plus inputs
         # hence, out0 + out1 - inp1 = input + f1 + g1 + g2 + g2 + ... + fn + gn
         return out0 + out1 - inp1
-
-

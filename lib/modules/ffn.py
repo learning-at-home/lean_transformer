@@ -39,7 +39,7 @@ class LeanFFN(nn.Module):
         sandwich_norm: bool = False,
         dense_i2h: Optional[nn.Linear] = None,
         dense_h2o: Optional[nn.Linear] = None,
-        residual: bool = True
+        residual: bool = True,
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
@@ -71,7 +71,6 @@ class LeanFFN(nn.Module):
             h2o_forward_indices = self.dense_h2o.shared_matrix.forward_indices
             h2o_backward_indices = self.dense_h2o.shared_matrix.backward_indices
 
-
         output = _LeanFFN.apply(
             input,
             self.layer_norm.weight,
@@ -95,7 +94,7 @@ class LeanFFN(nn.Module):
             self.dropout,
             self.training,
             self.layer_norm.eps,
-            self.residual
+            self.residual,
         )
         return output
 
@@ -137,7 +136,7 @@ class _LeanFFN(torch.autograd.Function):
         dropout: float,
         training: bool,
         ln_eps: float,
-        residual: bool
+        residual: bool,
     ):
         ctx._dropout, ctx._training, ctx._ln_eps = dropout, training, ln_eps
         ctx._activation, ctx._gated, ctx._residual = activation, gated, residual

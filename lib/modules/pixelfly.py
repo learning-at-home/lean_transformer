@@ -38,9 +38,7 @@ def get_butterfly_indices(
     if butterfly_size != 2 ** log_n or butterfly_size < 2:
         raise NotImplementedError("butterfly_size must be a power of 2")
     if not (1 <= n_factors <= log_n):
-        raise NotImplementedError(
-            "n_factors must be a between 1 and log_2(butterfly_size)"
-        )
+        raise NotImplementedError("n_factors must be a between 1 and log_2(butterfly_size)")
 
     twiddle = torch.ones(butterfly_size // 2, 2, 2)
     layout = sum(butterfly_factor_to_matrix(twiddle, index) for index in range(n_factors)).bool().int()
@@ -99,9 +97,7 @@ def get_butterfly_indices(
     return forward_indices.to(torch.int32), backward_indices.to(torch.int64)  # dtypes tuned for max throughput
 
 
-def butterfly_factor_to_matrix(
-    twiddle: torch.Tensor, factor_index: int
-) -> torch.Tensor:
+def butterfly_factor_to_matrix(twiddle: torch.Tensor, factor_index: int) -> torch.Tensor:
     """
     Let b be the base (most commonly 2).
     Parameters:
@@ -115,12 +111,8 @@ def butterfly_factor_to_matrix(
     assert twiddle.shape == (n // b, b, b)
     assert 0 <= factor_index <= log_b_n
     stride = b ** factor_index
-    x = einops.rearrange(
-        torch.eye(n), "bs (diagblk j stride) -> bs diagblk j stride", stride=stride, j=b
-    )
-    t = einops.rearrange(
-        twiddle, "(diagblk stride) i j -> diagblk stride i j", stride=stride
-    )
+    x = einops.rearrange(torch.eye(n), "bs (diagblk j stride) -> bs diagblk j stride", stride=stride, j=b)
+    t = einops.rearrange(twiddle, "(diagblk stride) i j -> diagblk stride i j", stride=stride)
     out = torch.einsum("d s i j, b d j s -> b d i s", t, x)
     out = einops.rearrange(out, "b diagblk i stride -> b (diagblk i stride)")
     return out.t()  # Transpose because we assume the 1st dimension of x is the batch dimension
@@ -155,8 +147,13 @@ def butterfly_matmul(input: torch.Tensor, weight: torch.Tensor, forward_indices:
 
 
 def butterfly_matmul_backward(
-        grad_output: torch.Tensor, input: torch.Tensor, weight: torch.Tensor, backward_indices: torch.IntTensor,
-        input_requires_grad: bool = True, weight_requires_grad: bool = True):
+    grad_output: torch.Tensor,
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    backward_indices: torch.IntTensor,
+    input_requires_grad: bool = True,
+    weight_requires_grad: bool = True,
+):
     """Compute gradients of butterfly_matmul w.r.t. input and/or weight without relying on pytorch autograd"""
     assert input_requires_grad or weight_requires_grad, "computing backward but none of the inputs requires grad"
     grad_input = grad_weight = None
@@ -175,14 +172,15 @@ def butterfly_matmul_backward(
     grad_blocks_for_indexing = F.embedding(backward_indices, grad_aggregated_blocks).flatten(0, -2)
     # ^-- shape: [(num_input_blocks * active_blocks_per_input),  (block_size, flat_batch_dims)]
 
-
-    grad_output_blocks = grad_blocks_for_indexing.view(num_input_blocks, active_blocks_per_input * block_size,
-                                                       flat_batch_dims)
+    grad_output_blocks = grad_blocks_for_indexing.view(
+        num_input_blocks, active_blocks_per_input * block_size, flat_batch_dims
+    )
     # ^-- shape: [num_input_blocks, (active_blocks_per_input * block_size), flat_batch_dims]
 
     if input_requires_grad:
         grad_input_permuted = torch.matmul(
-            weight.view(num_input_blocks, -1, block_size).permute(0, 2, 1), grad_output_blocks)
+            weight.view(num_input_blocks, -1, block_size).permute(0, 2, 1), grad_output_blocks
+        )
         grad_input = grad_input_permuted.flatten(0, -2).t().view(*grad_output.shape[:-1], input.shape[-1])
 
     if weight_requires_grad:

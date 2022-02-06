@@ -121,9 +121,7 @@ class HuggingFaceAuthorizer(TokenAuthorizerBase):
         try:
             expiration_time = datetime.fromisoformat(access_token.expiration_time)
         except ValueError:
-            logger.exception(
-                f"datetime.fromisoformat() failed to parse expiration time: {access_token.expiration_time}"
-            )
+            logger.exception(f"datetime.fromisoformat() failed to parse expiration time: {access_token.expiration_time}")
             return False
         if expiration_time.tzinfo is not None:
             logger.exception(f"Expected to have no timezone for expiration time: {access_token.expiration_time}")
