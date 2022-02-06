@@ -164,17 +164,17 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         return self.config.init_weights(module)
 
     def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            token_type_ids=None,
-            position_ids=None,
-            head_mask=None,
-            inputs_embeds=None,
-            labels=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
     ):
         assert head_mask is None and output_attentions is None and output_hidden_states is None, "not implemented"
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -220,8 +220,9 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
             # Shift so that tokens < n predict n
             ignored_labels = torch.full_like(labels[..., :1], fill_value=-100)
             shift_labels = torch.cat([labels[..., 1:], ignored_labels], dim=1)
-            loss = F.cross_entropy(lm_logits.view(-1, lm_logits.shape[-1]), shift_labels.view(-1),
-                                   reduction='mean', ignore_index=-100)
+            loss = F.cross_entropy(
+                lm_logits.view(-1, lm_logits.shape[-1]), shift_labels.view(-1), reduction="mean", ignore_index=-100
+            )
             # note: masked labels have index -100 so they will be ignored when computing cross-entropy
 
         if not return_dict:

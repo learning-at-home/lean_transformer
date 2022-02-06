@@ -15,6 +15,7 @@ from lib.modules.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialW
 
 class LeanTransformerConfig(PretrainedConfig):
     r"""
+
     :param hidden_size: main hidden dimension of a transformer, used as inputs and outputs of all layers
     :param intermediate_size: a (typically larger) hidden dimension where activation is applied
     :param num_attention_heads: number of heads in each attention layer, as defined in the original transformer
@@ -56,6 +57,7 @@ class LeanTransformerConfig(PretrainedConfig):
     :param kwargs: additional keyword arguments used by base PretrainedModel in huggingface transformers
 
     """
+
     def __init__(
         self,
         hidden_size: int = 4096,
@@ -206,6 +208,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
 class LeanTransformer(nn.Module):
     """A generic transformer that does not hog your GPU memory; see gpt.py and albert.py for usage examples"""
+
     def __init__(self, config: LeanTransformerConfig):
         super().__init__()
         self.config = config
@@ -232,7 +235,7 @@ class LeanTransformer(nn.Module):
                     sequence.append(ActiveKwargs(layer.attention, ("attention_mask",), use_first_output=True))
                     sequence.append(ActiveKwargs(layer.ffn, active_keys=()))
             sequential_cls = ReversibleWithKwargs if self.config.reversible else SequentialWithKwargs
-            self._sequential = (sequential_cls(*sequence), )
+            self._sequential = (sequential_cls(*sequence),)
         return self._sequential[0]
 
     def _make_attention(self, index: int, config: LeanTransformerConfig):
@@ -272,7 +275,7 @@ class LeanTransformer(nn.Module):
 
     def init_weights(self):
         self.apply(self.config.init_weights)
-        
+
     def gradient_checkpointing_enable(self, value: bool):
         sequential = self._get_sequential()
         assert not value or isinstance(sequential, SequentialWithKwargs), "Reversible does not need checkpoints"
@@ -285,6 +288,7 @@ class LeanTransformer(nn.Module):
 
 class GradientCheckpointingMixin:
     """A mix-in that enables gradient checkpoints in a huggingface model. See albert.py for usage examples."""
+
     supports_gradient_checkpointing: bool = True
 
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):

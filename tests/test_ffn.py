@@ -103,7 +103,7 @@ class ReferenceFFN(nn.Module):
         sandwich_norm: bool = False,
         dense_i2h: Optional[nn.Linear] = None,
         dense_h2o: Optional[nn.Linear] = None,
-        residual: bool = True
+        residual: bool = True,
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
@@ -144,9 +144,20 @@ class ReferenceFFN(nn.Module):
             raise RuntimeError("The output size of FFN layer must be either 1x or 2x the intermediate_size.")
 
 
-@pytest.mark.parametrize("adapter_dim,lowrank_dim,block_size,residual",
-                         [(0, 0, 0, True), (0, 0, 0, False), (0, 0, 16, False), (4, 0, 0, True), (0, 4, 0, True),
-                          (2, 6, 0, False), (6, 2, 16, True), (2, 2, 2, True), (1, 1, 1, False)])
+@pytest.mark.parametrize(
+    "adapter_dim,lowrank_dim,block_size,residual",
+    [
+        (0, 0, 0, True),
+        (0, 0, 0, False),
+        (0, 0, 16, False),
+        (4, 0, 0, True),
+        (0, 4, 0, True),
+        (2, 6, 0, False),
+        (6, 2, 16, True),
+        (2, 2, 2, True),
+        (1, 1, 1, False),
+    ],
+)
 def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residual: bool):
     torch.use_deterministic_algorithms(True)
 
@@ -163,7 +174,7 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         sandwich_norm=True,
         dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
         dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
-        residual=residual
+        residual=residual,
     )
     our_ffn = LeanFFN(
         dim,
@@ -172,7 +183,7 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         sandwich_norm=True,
         dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
         dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
-        residual=residual
+        residual=residual,
     )
     with torch.no_grad():
         baseline_ffn.sandwich_norm.bias[...] = torch.randn_like(baseline_ffn.sandwich_norm.bias)
@@ -221,4 +232,3 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
 
     for grad_ref, grad_our in zip(grad_params_ref, grad_params_our):
         assert torch.allclose(grad_ref, grad_our, rtol, atol)
-

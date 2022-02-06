@@ -72,9 +72,7 @@ class CheckpointHandler:
             self.repo.git_pull()
 
             # Then we add / commmit and push the changes
-            self.repo.push_to_hub(
-                commit_message=f"Epoch {self.task.optimizer.local_epoch}, loss {current_loss:.3f}"
-            )
+            self.repo.push_to_hub(commit_message=f"Epoch {self.task.optimizer.local_epoch}, loss {current_loss:.3f}")
             logger.info("Finished uploading to Model Hub")
         except Exception:
             logger.exception("Uploading the checkpoint to HF Model Hub failed:")

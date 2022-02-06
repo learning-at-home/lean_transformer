@@ -4,7 +4,12 @@ from typing import Optional
 import einops
 import torch
 
-from lib.modules.pixelfly import butterfly_matmul, butterfly_matmul_backward, butterfly_factor_to_matrix, get_butterfly_indices
+from lib.modules.pixelfly import (
+    butterfly_matmul,
+    butterfly_matmul_backward,
+    butterfly_factor_to_matrix,
+    get_butterfly_indices,
+)
 
 
 def test_block_sparse_matmul_internals(
@@ -21,18 +26,11 @@ def test_block_sparse_matmul_internals(
     butterfly_flat_indices, _backward_indices = get_butterfly_indices(
         out_features, in_features, block_size, butterfly_size, n_factors, stretch
     )
-    assert (
-        butterfly_flat_indices.max()
-        == butterfly_flat_indices.shape[1] * out_features // block_size - 1
-    )
+    assert butterfly_flat_indices.max() == butterfly_flat_indices.shape[1] * out_features // block_size - 1
 
-    active_blocks_per_input = butterfly_flat_indices.numel() // (
-        in_features // block_size
-    )
+    active_blocks_per_input = butterfly_flat_indices.numel() // (in_features // block_size)
     num_input_blocks = in_features // block_size
-    weight = torch.randn(
-        num_input_blocks * block_size, active_blocks_per_input, block_size
-    ).div_(100)
+    weight = torch.randn(num_input_blocks * block_size, active_blocks_per_input, block_size).div_(100)
 
     # SETUP TEST CONDITIONS
     input = torch.randn(3, in_features)
@@ -76,14 +74,10 @@ def reference_butterfly_layout_for_testing(
     if butterfly_size != 2 ** log_n or butterfly_size < 2:
         raise NotImplementedError("butterfly_size must be a power of 2")
     if not (1 <= n_factors <= log_n):
-        raise NotImplementedError(
-            "n_factors must be a between 1 and log_2(butterfly_size)"
-        )
+        raise NotImplementedError("n_factors must be a between 1 and log_2(butterfly_size)")
 
     twiddle = torch.ones(butterfly_size // 2, 2, 2)
-    layout = sum(
-        butterfly_factor_to_matrix(twiddle, index) for index in range(n_factors)
-    )
+    layout = sum(butterfly_factor_to_matrix(twiddle, index) for index in range(n_factors))
     layout = layout.bool().int()
     # Convert from (butterfly_size, butterfly_size) mask to (out_features, in_features) mask
     layout = einops.repeat(
@@ -101,25 +95,15 @@ def reference_butterfly_layout_for_testing(
         blksz1=block_size,
     )
 
-    layout = (layout > 0).any(
-        dim=-1
-    )  # [out_features // block_size, in_features // block_size]
+    layout = (layout > 0).any(dim=-1)  # [out_features // block_size, in_features // block_size]
     if not stretch:
         out_blocks, in_blocks = layout.shape
         if out_blocks > in_blocks:
             ratio = out_blocks // in_blocks
-            layout = (
-                layout.view(out_blocks // ratio, ratio, in_blocks)
-                .permute(1, 0, 2)
-                .reshape_as(layout)
-            )
+            layout = layout.view(out_blocks // ratio, ratio, in_blocks).permute(1, 0, 2).reshape_as(layout)
         elif out_blocks < in_blocks:
             ratio = in_blocks // out_blocks
-            layout = (
-                layout.view(out_blocks, in_blocks // ratio, ratio)
-                .permute(0, 2, 1)
-                .reshape_as(layout)
-            )
+            layout = layout.view(out_blocks, in_blocks // ratio, ratio).permute(0, 2, 1).reshape_as(layout)
     return layout
 
 
@@ -137,8 +121,9 @@ def test_butterfly_gradients():
     )
 
     input = torch.randn(3, 2, in_features, requires_grad=True)
-    weight = torch.randn(in_features, forward_indices.shape[1] * out_features // in_features, block_size,
-                         requires_grad=True)
+    weight = torch.randn(
+        in_features, forward_indices.shape[1] * out_features // in_features, block_size, requires_grad=True
+    )
     grad_output = torch.randn(3, 2, out_features)
 
     with torch.no_grad():
@@ -150,5 +135,3 @@ def test_butterfly_gradients():
     out.backward(grad_output)
     assert torch.allclose(our_grad_input, input.grad)
     assert torch.allclose(our_grad_weight, weight.grad)
-
-
