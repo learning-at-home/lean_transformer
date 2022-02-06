@@ -112,7 +112,8 @@ class DataCollatorForWholeWordMask(DataCollatorForLanguageModeling):
 
         return mask_labels
 
-    def mask_tokens(self,
+    def mask_tokens(
+        self,
         inputs: torch.Tensor,
         mask_labels: torch.Tensor,
         special_tokens_mask: Optional[torch.Tensor] = None,

@@ -36,9 +36,11 @@ def register_task(name: str):
 
 class TrainingTaskBase:
     """A container that defines the training config, model, tokenizer, optimizer and other local training utilities"""
+
     _dht = _optimizer = _authorizer = None  # for caching
 
-    def __init__(self,
+    def __init__(
+        self,
         model: nn.Module,
         peer_args: BasePeerArguments,
         trainer_args: HFTrainerArguments,

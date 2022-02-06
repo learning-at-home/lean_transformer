@@ -20,7 +20,7 @@ disable_progress_bar()
 
 def split_list(l, n):
     # splits list/string into n size chunks
-    return (l[i:i + n] for i in range(0, len(l), n))
+    return (l[i : i + n] for i in range(0, len(l), n))
 
 
 def process_instance(tokenizer, text, max_seq_length):
@@ -40,7 +40,7 @@ def examples_from_documents(tokenizer, documents, max_sequence_length: mp.shared
             instances = process_instance(tokenizer, text, int(max_sequence_length.value))
 
             for instance in instances:
-                new_examples['input_ids'].append(instance)
+                new_examples["input_ids"].append(instance)
         except Exception as e:
             logger.warning(f"Caught {repr(e)}, ignoring...", exc_info=True)
 
@@ -93,4 +93,3 @@ class WrappedIterableDataset(torch.utils.data.IterableDataset):
                     logger.info("Began iterating minibatches!")
                     started = True
                 yield sample
-#
