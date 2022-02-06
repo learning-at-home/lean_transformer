@@ -284,6 +284,7 @@ class LeanTransformer(nn.Module):
 
 
 class GradientCheckpointingMixin:
+    """A mix-in that enables gradient checkpoints in a huggingface model. See albert.py for usage examples."""
     supports_gradient_checkpointing: bool = True
 
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
