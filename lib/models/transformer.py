@@ -273,7 +273,7 @@ class LeanTransformer(nn.Module):
         return LeanFFN(
             config.hidden_size,
             config.intermediate_size,
-            activation=ACT2FN[config.hidden_act],
+            activation=ACT2FN[config.hidden_act] if isinstance(config.hidden_act, str) else config.hidden_act,
             gated=config.hidden_act_gated,
             layer_norm_eps=config.layer_norm_eps,
             dropout=config.hidden_dropout_prob,
