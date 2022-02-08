@@ -2,7 +2,6 @@ import math
 from functools import lru_cache
 from typing import Optional, Tuple
 
-import torch
 from torch import nn as nn
 from transformers import PretrainedConfig
 from transformers.activations import ACT2FN
@@ -12,6 +11,7 @@ from lib.modules import LeanFFN, LeanSelfAttention
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix
 from lib.modules.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
+from lib.modules.rotary import maybe_script
 
 
 class LeanTransformerConfig(PretrainedConfig):
@@ -119,7 +119,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.hidden_act_gated = hidden_act_gated
         self.hidden_act_callable = ACT2FN[hidden_act] if isinstance(hidden_act, str) else hidden_act
         if hidden_act_jit:
-            self.hidden_act_callable = torch.jit.script(self.hidden_act_callable)
+            self.hidden_act_callable = maybe_script(self.hidden_act_callable)
 
         self.sandwich_norm = sandwich_norm
         self.reversible = reversible
