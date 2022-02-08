@@ -2,6 +2,7 @@ import math
 from functools import lru_cache
 from typing import Optional, Tuple
 
+import torch
 from torch import nn as nn
 from transformers import PretrainedConfig
 from transformers.activations import ACT2FN
@@ -77,6 +78,7 @@ class LeanTransformerConfig(PretrainedConfig):
         block_size: int = 0,
         lowrank_dim: int = 0,
         hidden_act: str = "gelu_new",
+        hidden_act_jit: bool = True,
         hidden_act_gated: bool = False,
         sandwich_norm: bool = False,
         reversible: bool = False,
@@ -115,6 +117,10 @@ class LeanTransformerConfig(PretrainedConfig):
         self.hidden_act = hidden_act
         self.layer_norm_eps = layer_norm_eps
         self.hidden_act_gated = hidden_act_gated
+        self.hidden_act_callable = ACT2FN[hidden_act] if isinstance(hidden_act, str) else hidden_act
+        if hidden_act_jit:
+            self.hidden_act_callable = torch.jit.script(self.hidden_act_callable)
+
         self.sandwich_norm = sandwich_norm
         self.reversible = reversible
 
@@ -273,7 +279,7 @@ class LeanTransformer(nn.Module):
         return LeanFFN(
             config.hidden_size,
             config.intermediate_size,
-            activation=ACT2FN[config.hidden_act] if isinstance(config.hidden_act, str) else config.hidden_act,
+            activation=self.config.hidden_act_callable,
             gated=config.hidden_act_gated,
             layer_norm_eps=config.layer_norm_eps,
             dropout=config.hidden_dropout_prob,
