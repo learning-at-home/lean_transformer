@@ -115,12 +115,9 @@ class LeanTransformerConfig(PretrainedConfig):
 
         self.num_attention_heads = num_attention_heads
         self.hidden_act = hidden_act
-        self.layer_norm_eps = layer_norm_eps
+        self.hidden_act_jit = hidden_act_jit
         self.hidden_act_gated = hidden_act_gated
-        self.hidden_act_callable = ACT2FN[hidden_act] if isinstance(hidden_act, str) else hidden_act
-        if hidden_act_jit:
-            self.hidden_act_callable = maybe_script(self.hidden_act_callable)
-
+        self.layer_norm_eps = layer_norm_eps
         self.sandwich_norm = sandwich_norm
         self.reversible = reversible
 
@@ -171,6 +168,14 @@ class LeanTransformerConfig(PretrainedConfig):
 
     def get_token_type_embeddings(self) -> Optional[nn.Embedding]:
         return nn.Embedding(self.type_vocab_size, self.embedding_size) if self.type_vocab_size else None
+
+    @lru_cache()
+    def get_activation_callable(self):
+        hidden_act_callable = ACT2FN[self.hidden_act] if isinstance(self.hidden_act, str) else self.hidden_act
+        assert callable(hidden_act_callable)
+        if self.hidden_act_jit:
+            hidden_act_callable = maybe_script(hidden_act_callable)
+        return hidden_act_callable
 
     def get_linear_layer(self, key: str, index: int, in_features: int, out_features: int, bias: bool) -> nn.Linear:
         if not self.share_large_matrices and self.adapter_dim != 0:
@@ -279,7 +284,7 @@ class LeanTransformer(nn.Module):
         return LeanFFN(
             config.hidden_size,
             config.intermediate_size,
-            activation=self.config.hidden_act_callable,
+            activation=self.config.get_activation_callable(),
             gated=config.hidden_act_gated,
             layer_norm_eps=config.layer_norm_eps,
             dropout=config.hidden_dropout_prob,
