@@ -42,6 +42,9 @@ class LeanTransformerConfig(PretrainedConfig):
     :param hidden_act: activation function for FFN layers, either string or callable
     :param gated: use gated activations based on https://arxiv.org/abs/2002.05202 and https://arxiv.org/abs/2102.11972
       note: gated activations require 1.5x more parameters compared to their non-gated variants.
+    :param attn_qkv_bias: whether or not to use biases in attention qkv projection
+    :param out_proj_bias: whether or not to use biases in output projections of both attention and ffn,
+      defaults to True unless sandwich_norm is enabled -- since sandwich norm already has a bias component
     :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
        as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
        more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
@@ -79,6 +82,8 @@ class LeanTransformerConfig(PretrainedConfig):
         hidden_act: str = "gelu_new",
         hidden_act_jit: bool = True,
         hidden_act_gated: bool = False,
+        attn_qkv_bias: bool = True,
+        out_proj_bias: Optional[bool] = None,
         sandwich_norm: bool = False,
         reversible: bool = False,
         hidden_dropout_prob: float = 0,
@@ -117,6 +122,8 @@ class LeanTransformerConfig(PretrainedConfig):
         self.hidden_act_jit = hidden_act_jit
         self.hidden_act_gated = hidden_act_gated
         self.layer_norm_eps = layer_norm_eps
+        self.attn_qkv_bias = attn_qkv_bias
+        self.out_proj_bias = out_proj_bias
         self.sandwich_norm = sandwich_norm
         self.reversible = reversible
 
@@ -272,9 +279,9 @@ class LeanTransformer(nn.Module):
             dropout=config.hidden_dropout_prob,
             layer_norm_eps=config.layer_norm_eps,
             dense_qkv=config.get_linear_layer(
-                "self_attn_qkv", index, config.hidden_size, config.hidden_size * 3, bias=True),
+                "self_attn_qkv", index, config.hidden_size, config.hidden_size * 3, bias=config.attn_qkv_bias),
             dense_out=config.get_linear_layer(
-                "self_attn_out", index, config.hidden_size, config.hidden_size, bias=True),
+                "self_attn_out", index, config.hidden_size, config.hidden_size, bias=config.out_proj_bias),
             sandwich_norm=config.sandwich_norm,
             residual=not config.reversible, checkpoint_attention_core=not config.reversible
         )
@@ -290,7 +297,7 @@ class LeanTransformer(nn.Module):
             dense_i2h=config.get_linear_layer("ffn_first", index, config.hidden_size,
                                               config.intermediate_size * (1 + config.hidden_act_gated), bias=True),
             dense_h2o=config.get_linear_layer("ffn_second", index, config.intermediate_size,
-                                              config.hidden_size, bias=True),
+                                              config.hidden_size, bias=config.out_proj_bias),
             sandwich_norm=config.sandwich_norm,
             residual=not config.reversible,
         )

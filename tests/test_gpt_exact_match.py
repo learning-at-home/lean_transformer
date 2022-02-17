@@ -27,7 +27,7 @@ def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
     atol, rtol = 1e-4, float("inf")
     test_data = torch.load(filename)
 
-    config = LeanGPTConfig(**json.loads(test_data["config"]))
+    config = LeanGPTConfig(**json.loads(test_data["config"]), out_proj_bias=True)
     model = LeanGPTForPreTraining(config).train(False)
 
     report = model.load_state_dict(test_data["state"])
