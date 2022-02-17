@@ -55,8 +55,8 @@ class LeanSelfAttention(nn.Module):
         self.attention_core = attention_core
         self.dense_qkv = nn.Linear(hidden_size, hidden_size * 3) if dense_qkv is None else dense_qkv
         self.dense_out = nn.Linear(hidden_size, hidden_size) if dense_out is None else dense_out
-        assert dense_qkv.in_features == dense_out.in_features == dense_out.out_features == hidden_size
-        assert dense_qkv.out_features == hidden_size * 3
+        assert self.dense_qkv.in_features == self.dense_out.in_features == self.dense_out.out_features == hidden_size
+        assert self.dense_qkv.out_features == hidden_size * 3
 
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.sandwich_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if sandwich_norm else None
