@@ -1,11 +1,12 @@
 import math
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
 from lib.modules.rotary import RotaryEmbeddings
+from lib.modules.utils import maybe_script
 
 
 class LeanSelfAttention(nn.Module):
@@ -90,43 +91,56 @@ class SimpleAttentionCore(nn.Module):
         self.hidden_size, self.num_attention_heads = hidden_size, num_attention_heads
         self.attention_head_size = hidden_size // num_attention_heads
 
-    def transpose_for_scores(self, x):
-        """transpose from [batch, seq_length, full_hid_size] to [batch, num_heads, seq_length, head_size]"""
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
-
     def forward(self, query, key, value, attention_mask):
         """
         :param query: [batch_size, query_seq_len, hidden_size]
         :param key: [batch_size, kv_seq_len, hidden_size]
         :param value: [batch_size, kv_seq_len, hidden_size]
-        :param attention_mask: [batch, query_seq_len, hidden_size]
+        :param attention_mask: float [(optional heads), batch, query_seq_len, kv_seq_length]
+        :note: attention_mask should be equal to zero for non-masked tokens and a large negative value for masked ones
         :return: (outputs, probs)
           - outputs shape: [batch_size, query_seq_len, hidden_size]
           - probs shape: [batch_size, num_heads, query_seq_len, kv_seq_len]
         """
-        query, key, value = map(self.transpose_for_scores, (query, key, value))
+        if attention_mask is not None:
+            assert torch.is_floating_point(attention_mask), "expected float mask with negative values for masked items"
+        return self._attention_core_forward(
+            query, key, value, attention_mask, self.num_attention_heads, self.attention_dropout.p, self.training
+        )
+
+    @staticmethod
+    @maybe_script
+    def _attention_core_forward(
+            query: torch.Tensor,
+            key: torch.Tensor,
+            value: torch.Tensor,
+            attention_mask: Optional[torch.Tensor],
+            num_attention_heads: int, attention_dropout: float, training: bool
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # transpose from [batch, seq_length, full_hid_size] to [batch, num_heads, seq_length, head_size]
+        new_query_shape = query.shape[:-1] + (num_attention_heads, -1)
+        new_kv_shape = key.shape[:-1] + (num_attention_heads, -1)
+
+        query = query.view(new_query_shape).permute(0, 2, 1, 3)
+        key_transposed = key.view(new_kv_shape).permute(0, 2, 3, 1)  # swap to [..., head_size, seq_length]
+        value = value.view(new_kv_shape).permute(0, 2, 1, 3)
+        del key  # not to confuse with key_transposed
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query, key.transpose(-1, -2) / math.sqrt(query.shape[-1]))
+        attention_scores = torch.matmul(query, key_transposed / math.sqrt(query.shape[-1]))
 
         if attention_mask is not None:
-            if isinstance(attention_mask, torch.Tensor):
-                attention_mask = (attention_mask,)
-            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-            for mask_i in attention_mask:
-                attention_scores += mask_i
+            attention_scores += attention_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = torch.softmax(attention_scores, dim=-1)
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
-        attention_probs = self.attention_dropout(attention_probs)
-
+        attention_probs = torch.dropout(attention_probs, attention_dropout, training)
         attention_output = torch.matmul(attention_probs, value)
         attention_output = attention_output.transpose(2, 1).flatten(2)
+
         return attention_output, attention_probs
 
 

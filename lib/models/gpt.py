@@ -89,14 +89,17 @@ class LeanGPTEmbeddings(nn.Module):
 
         seq_length = input_shape[1]
 
-        if token_type_ids is None:
+        if token_type_ids is None and self.token_type_embeddings is not None:
             token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
 
         if inputs_embeds is None:
             inputs_embeds = self.word_embeddings(input_ids)
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
-        embeddings = inputs_embeds + token_type_embeddings
+        embeddings = inputs_embeds
+
+        if token_type_ids is not None:
+            token_type_embeddings = self.token_type_embeddings(token_type_ids)
+            embeddings = inputs_embeds + token_type_embeddings
 
         if self.position_embeddings is not None:
             if position_ids is None:
@@ -120,7 +123,7 @@ class TiedMLMHead(nn.Module):
             self.hidden_bias = nn.Parameter(torch.zeros(config.embedding_size))
 
         self.layer_norm = nn.LayerNorm(config.embedding_size)
-        self.activation = ACT2FN[config.hidden_act]
+        self.activation = config.get_activation_callable()
         self.logits_bias = nn.Parameter(torch.zeros(config.vocab_size))
 
     def forward(self, hidden_states):
@@ -192,7 +195,8 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         device = input_ids.device if input_ids is not None else inputs_embeds.device
 
         if attention_mask is None:
-            attention_mask = torch.ones(input_shape, device=device)
+            attention_mask = torch.ones(input_shape, dtype=torch.int64, device=device)
+        assert not torch.is_floating_point(attention_mask), "model requires boolean or int mask with binary 0/1 entries"
         if token_type_ids is None:
             if hasattr(self.embeddings, "token_type_ids"):
                 buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
@@ -212,7 +216,7 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         embedding_output = self.embeddings(
             input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         )
-        transformer_outputs = self.transformer(embedding_output, (extended_attention_mask, causal_attention_mask))
+        transformer_outputs = self.transformer(embedding_output, extended_attention_mask + causal_attention_mask)
         lm_logits = self.lm_head(transformer_outputs.last_hidden_state)
 
         loss = None

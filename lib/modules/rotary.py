@@ -3,13 +3,12 @@ Auxiliary modules for implementing Rotary Position Embeddings
 Original paper: https://arxiv.org/abs/2104.09864
 Based on reference implementation from https://blog.eleuther.ai/rotary-embeddings
 """
-import functools
-import os
 
 import torch
 import torch.distributed
 import torch.nn as nn
 from hivemind.utils.logging import get_logger
+from lib.modules.utils import maybe_script
 
 logger = get_logger(__file__)
 
@@ -70,11 +69,3 @@ def rotate(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tenso
     return x * cos + x_rotated * sin
 
 
-@functools.lru_cache()
-def maybe_script(fn: callable) -> callable:
-    """Apply torch.jit.script to function unless one is using TPU. TPU does not support torch.jit.script."""
-    if os.environ.get("TPU_NAME"):
-        # this is a reserved variable that must be set to TPU address (e.g. grpc://11.22.33.44:1337) for TPU to function
-        return fn
-    else:
-        return torch.jit.script(fn)

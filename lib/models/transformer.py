@@ -7,11 +7,10 @@ from transformers import PretrainedConfig
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutput
 
-from lib.modules import LeanFFN, LeanSelfAttention
+from lib.modules import LeanFFN, LeanSelfAttention, maybe_script
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix
 from lib.modules.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
-from lib.modules.rotary import maybe_script
 
 
 class LeanTransformerConfig(PretrainedConfig):

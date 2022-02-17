@@ -6,6 +6,8 @@ import einops
 import torch
 import torch.nn.functional as F
 
+from lib.modules.utils import maybe_script
+
 
 @functools.lru_cache
 def get_butterfly_indices(
@@ -118,7 +120,8 @@ def butterfly_factor_to_matrix(twiddle: torch.Tensor, factor_index: int) -> torc
     return out.t()  # Transpose because we assume the 1st dimension of x is the batch dimension
 
 
-def butterfly_matmul(input: torch.Tensor, weight: torch.Tensor, forward_indices: torch.IntTensor) -> torch.Tensor:
+@maybe_script
+def butterfly_matmul(input: torch.Tensor, weight: torch.Tensor, forward_indices: torch.Tensor) -> torch.Tensor:
     """
     :param input: tensor [*batch_dims, in_features]
     :param weight: tensor [in_features, active_blocks_per_input, block_size]
@@ -143,20 +146,16 @@ def butterfly_matmul(input: torch.Tensor, weight: torch.Tensor, forward_indices:
 
     outputs = aggregated_blocks.view(-1, input.shape[0]).t()
     # ^-- shape: [flat_batch_dims, (num_output_blocks * block_size)] aka [flat_batch_dims, out_features]
-    return outputs.view(*batch_dims, outputs.shape[-1])
+    return outputs.view(batch_dims + outputs.shape[-1:])
 
 
+@maybe_script
 def butterfly_matmul_backward(
-    grad_output: torch.Tensor,
-    input: torch.Tensor,
-    weight: torch.Tensor,
-    backward_indices: torch.IntTensor,
-    input_requires_grad: bool = True,
-    weight_requires_grad: bool = True,
-):
+        grad_output: torch.Tensor, input: torch.Tensor, weight: torch.Tensor, backward_indices: torch.Tensor,
+        input_requires_grad: bool = True, weight_requires_grad: bool = True):
     """Compute gradients of butterfly_matmul w.r.t. input and/or weight without relying on pytorch autograd"""
     assert input_requires_grad or weight_requires_grad, "computing backward but none of the inputs requires grad"
-    grad_input = grad_weight = None
+    grad_input = grad_weight = torch.empty(0)
     out_features = grad_output.shape[-1]
     in_features, active_blocks_per_input, block_size = weight.shape
     num_input_blocks = input.shape[-1] // block_size
@@ -181,7 +180,7 @@ def butterfly_matmul_backward(
         grad_input_permuted = torch.matmul(
             weight.view(num_input_blocks, -1, block_size).permute(0, 2, 1), grad_output_blocks
         )
-        grad_input = grad_input_permuted.flatten(0, -2).t().view(*grad_output.shape[:-1], input.shape[-1])
+        grad_input = grad_input_permuted.flatten(0, -2).t().view(grad_output.shape[:-1] + input.shape[-1:])
 
     if weight_requires_grad:
         grad_weight = torch.matmul(

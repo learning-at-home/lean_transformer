@@ -2,7 +2,8 @@
 This module implements weight matrix sharing for linear layer: full sharing and sharing with adapters
 """
 import math
-from typing import Optional, Sequence, Tuple
+from itertools import zip_longest
+from typing import Optional, Tuple, List
 
 import torch
 import torch.nn as nn
@@ -10,6 +11,7 @@ import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from lib.modules.pixelfly import butterfly_matmul, butterfly_matmul_backward, get_butterfly_indices
+from lib.modules.utils import maybe_script
 
 
 class GeneralizedMatrix(nn.Module):
@@ -117,20 +119,21 @@ class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_fwd
     def forward(ctx, *args):
-        output, tensors_to_save = _GeneralizedLinear._forward_impl(*args)
+        output, *tensors_to_save = _GeneralizedLinear._forward_impl(*args)
         ctx.save_for_backward(*tensors_to_save)
         return output
 
     @staticmethod
+    @maybe_script
     def _forward_impl(
         input: torch.Tensor,
         main_weight: torch.Tensor,
         bias: Optional[torch.Tensor],
         lowrank_first: Optional[torch.Tensor],
         lowrank_second: Optional[torch.Tensor],
-        forward_indices: Optional[torch.IntTensor],
-        backward_indices: Optional[torch.IntTensor],
-    ) -> Tuple[torch.Tensor, Sequence[torch.Tensor]]:
+        forward_indices: Optional[torch.Tensor],
+        backward_indices: Optional[torch.Tensor],
+    ):
         input_flat = input.view(-1, input.shape[-1])
         if forward_indices is not None:
             output = butterfly_matmul(input_flat, main_weight, forward_indices)
@@ -139,37 +142,50 @@ class _GeneralizedLinear(torch.autograd.Function):
         else:
             output = F.linear(input_flat, main_weight, bias)
 
-        if lowrank_first is not None:
+        if lowrank_first is not None and lowrank_second is not None:
             lowrank_hid = F.linear(input_flat, lowrank_first)
-            reuse_output = output if "xla" in output.device.type else None  # TPU does not support in-place
-            output = torch.addmm(output, lowrank_hid, lowrank_second.t(), out=reuse_output)
+            if "xla" in output.device.type:  # xla does not support in-place ops
+                output = torch.addmm(output, lowrank_hid, lowrank_second.t().to(output.dtype))
+            else:
+                output = torch.addmm(output, lowrank_hid, lowrank_second.t().to(output.dtype), out=output)
         else:
             lowrank_hid = None
-        output = output.view(*input.shape[:-1], output.shape[-1])
-        tensors_to_save = input, lowrank_hid, main_weight, lowrank_first, lowrank_second, backward_indices
-        return output, tensors_to_save
+        output = output.view(input.shape[:-1] + output.shape[-1:])
+        return output, input, lowrank_hid, main_weight, lowrank_first, lowrank_second, backward_indices
 
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output: torch.Tensor):
-        return _GeneralizedLinear._backward_impl(grad_output, *ctx.saved_tensors, needs_input_grad=ctx.needs_input_grad)
+        grads = _GeneralizedLinear._backward_impl(
+            grad_output, *ctx.saved_tensors, needs_input_grad=ctx.needs_input_grad
+        )
+        return tuple(grad if needed else None for grad, needed in zip_longest(grads, ctx.needs_input_grad))
 
     @staticmethod
-    def _backward_impl(grad_output: torch.Tensor, *saved_tensors: torch.Tensor, needs_input_grad: Sequence[bool]):
-        grad_input = grad_input_flat = grad_main_weight = grad_lowrank_first = grad_lowrank_second = grad_bias = None
-        input, lowrank_hid, main_weight, lowrank_first, lowrank_second, backward_indices = saved_tensors
-
+    @maybe_script
+    def _backward_impl(grad_output: torch.Tensor,
+                       input: torch.Tensor,
+                       lowrank_hid: Optional[torch.Tensor],
+                       main_weight: torch.Tensor,
+                       lowrank_first: Optional[torch.Tensor],
+                       lowrank_second: Optional[torch.Tensor],
+                       backward_indices: Optional[torch.Tensor],
+                       needs_input_grad: List[bool]):
+        grad_input = grad_input_flat = grad_main_weight = grad_lowrank_first = grad_lowrank_second = grad_bias \
+            = grad_output_flat_transposed = grad_lowrank_hid_flat = lowrank_hid_flat = torch.empty(0)
         input_flat = input.flatten(0, -2)  # [etc, in_features]
         grad_output_flat = grad_output.flatten(0, -2)  # [etc, out_features]
 
         if lowrank_hid is not None:
             lowrank_hid_flat = lowrank_hid.flatten(0, -2)  # [etc, lowrank_dim]
         if lowrank_first is not None and (needs_input_grad[0] or needs_input_grad[3]):
+            assert lowrank_second is not None
             grad_lowrank_hid_flat = torch.matmul(grad_output_flat, lowrank_second)  # [etc, lowrank_dim]
         if needs_input_grad[1] or needs_input_grad[4]:
             grad_output_flat_transposed = grad_output_flat.t()  # [out_features, etc]
 
         if needs_input_grad[4]:
+            assert lowrank_second is not None
             grad_lowrank_second = torch.matmul(grad_output_flat_transposed, lowrank_hid_flat)
             # ^-- [out_features, lowrank_dim]
         if needs_input_grad[3]:
@@ -178,7 +194,6 @@ class _GeneralizedLinear(torch.autograd.Function):
             # ^-- [lowrank_dim, in_features]
         if needs_input_grad[2]:
             grad_bias = grad_output_flat.sum(dim=0)  # [out_features]
-
         if backward_indices is None:
             # dense shared matrix
             if needs_input_grad[1]:
@@ -192,11 +207,13 @@ class _GeneralizedLinear(torch.autograd.Function):
                 grad_output_flat, input_flat, main_weight, backward_indices,
                 input_requires_grad=needs_input_grad[0], weight_requires_grad=needs_input_grad[1])
 
-        if grad_input_flat is not None and lowrank_first is not None:
+        if needs_input_grad[0] and lowrank_first is not None:
             # grad w.r.t. input through low-rank components
             assert needs_input_grad[0]
-            reuse_grad_input = grad_input_flat if "xla" in grad_input_flat.device.type else None
-            grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first, out=reuse_grad_input)
-        if grad_input_flat is not None:
+            if grad_input_flat.dtype == lowrank_first.dtype == grad_lowrank_hid_flat.dtype:
+                grad_input_flat = grad_input_flat.addmm_(grad_lowrank_hid_flat, lowrank_first)
+            else:
+                grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first)
+        if needs_input_grad[0]:
             grad_input = grad_input_flat.view_as(input)
         return grad_input, grad_main_weight, grad_bias, grad_lowrank_first, grad_lowrank_second, None, None
