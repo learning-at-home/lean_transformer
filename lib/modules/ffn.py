@@ -168,7 +168,7 @@ class _LeanFFN(torch.autograd.Function):
             dropout_mask = (out == 0.0).to(torch.int8)
 
         if residual:
-            out = out.add_(input_2d) if out.dtype == input_2d.dtype else torch.add(input_2d, out)
+            out = torch.add(input_2d, out, out=out if out.dtype == input_2d.dtype else None)
 
         assert i2h_tensors[0] is input_ln and h2o_tensors[0] is hid_act  # we can rematerialize these tensors
         tensors_to_save = [
