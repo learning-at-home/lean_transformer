@@ -122,12 +122,12 @@ class LeanGPTEmbeddings(nn.Module):
 
 
 class LeanGPTHead(nn.Module):
-    hidden_embedding_mapping = logits_weight = None
 
     def __init__(self, config: LeanGPTConfig, embeddings: LeanGPTEmbeddings):
         super().__init__()
         self.embeddings = embeddings
 
+        self.hidden_bias = self.hidden_embedding_mapping = self.logits_weight = None
         if config.embedding_size != config.hidden_size:
             self.hidden_bias = nn.Parameter(torch.zeros(config.embedding_size))
             if not config.tie_embedding_hidden_mapping:
@@ -142,7 +142,16 @@ class LeanGPTHead(nn.Module):
 
         self.logits_bias = nn.Parameter(torch.zeros(config.vocab_size))
 
+    def forward(self, hidden_states):
+        if self.hidden_bias is not None:
+            hidden_states = F.linear(input=hidden_states, weight=self.get_hidden_mapping(), bias=self.hidden_bias)
+        hidden_states = self.activation(hidden_states) if self.activation is not None else hidden_states
+        hidden_states = self.layer_norm(hidden_states)
+        logits = F.linear(input=hidden_states, weight=self.get_logits_weight(), bias=self.logits_bias)
+        return logits
+
     def get_hidden_mapping(self) -> torch.Tensor:
+        assert self.hidden_bias is not None
         if self.hidden_embedding_mapping is not None:
             return self.hidden_embedding_mapping
         else:
@@ -150,15 +159,6 @@ class LeanGPTHead(nn.Module):
 
     def get_logits_weight(self) -> torch.Tensor:
         return self.logits_weight if self.logits_weight is not None else self.embeddings.word_embeddings.weight
-
-    def forward(self, hidden_states):
-        if hasattr(self, "hidden_bias"):
-            hidden_states = F.linear(input=hidden_states, weight=self.get_hidden_mapping(), bias=self.hidden_bias)
-
-        hidden_states = self.activation(hidden_states) if self.activation is not None else hidden_states
-        hidden_states = self.layer_norm(hidden_states)
-        logits = F.linear(input=hidden_states, weight=self.get_logits_weight(), bias=self.logits_bias)
-        return logits
 
 
 class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
