@@ -138,7 +138,7 @@ class _GeneralizedLinear(torch.autograd.Function):
         if forward_indices is not None:
             output = butterfly_matmul(input_flat, main_weight, forward_indices)
             if bias is not None:
-                output += bias
+                output.add_(bias.to(output.dtype))
         else:
             output = F.linear(input_flat, main_weight, bias)
 
@@ -209,9 +209,11 @@ class _GeneralizedLinear(torch.autograd.Function):
 
         if needs_input_grad[0] and lowrank_first is not None:
             # grad w.r.t. input through low-rank components
-            assert needs_input_grad[0]
-            if grad_input_flat.dtype == lowrank_first.dtype == grad_lowrank_hid_flat.dtype:
-                grad_input_flat = grad_input_flat.addmm_(grad_lowrank_hid_flat, lowrank_first)
+            if 'xla' not in grad_output.device.type:
+                grad_input_flat = grad_input_flat.addmm_(
+                    grad_lowrank_hid_flat.to(grad_output_flat.dtype),
+                    lowrank_first.to(grad_output_flat.dtype)
+                )
             else:
                 grad_input_flat = torch.addmm(grad_input_flat, grad_lowrank_hid_flat, lowrank_first)
         if needs_input_grad[0]:
