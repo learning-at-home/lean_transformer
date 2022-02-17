@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from lib.modules.linear import GeneralizedLinear, _GeneralizedLinear
+from lib.modules.utils import ACT2FN
 
 
 class LeanFFN(nn.Module):
@@ -33,7 +34,7 @@ class LeanFFN(nn.Module):
         self,
         hidden_size: int,
         intermediate_size: int,
-        activation=F.gelu,
+        activation=ACT2FN["gelu_fused"],
         gated: bool = False,
         layer_norm_eps: float = 1e-12,
         dropout: float = 0.0,
@@ -144,6 +145,8 @@ class _LeanFFN(torch.autograd.Function):
         ctx._use_sandwich = sandwich_ln_weight is not None
 
         dropout_mask, pre_sandwich = None, None  # optional tensors to save
+
+        #input = input.to(torch.float32, copy=False)  # accumulate residuals to fp32; no-op if already fp32
         input_2d = input.view(-1, input.shape[-1])
 
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
@@ -204,7 +207,7 @@ class _LeanFFN(torch.autograd.Function):
         # backward(... -> sandwich_norm -> dropout -> residual)
         grad_residual_2d = grad_output_2d if ctx._residual else None
         if dropout_mask is not None:
-            grad_output_2d = grad_output_2d.mul_(dropout_mask.to(grad_output_2d.dtype))
+            grad_output_2d = grad_output_2d.mul(dropout_mask.to(grad_output_2d.dtype))
         if ctx._use_sandwich:
             assert pre_sandwich is not None
             with torch.enable_grad():
@@ -235,7 +238,7 @@ class _LeanFFN(torch.autograd.Function):
 
             (grad_hid,) = torch.autograd.grad(hid_act, pre_activation, grad_outputs=grad_hid_act)
             pre_activation.requires_grad_(False)
-            del hid_act, pre_activation
+            del hid_act
 
         # backward(... -> input_layernorm -> liner_i2h -> ...)
         with torch.enable_grad():
@@ -247,7 +250,6 @@ class _LeanFFN(torch.autograd.Function):
                 (grad_input_ln_2d, grad_i2h_weight, grad_i2h_bias, grad_i2h_lowrank_first, grad_i2h_lowrank_second,
                  unused_grad_forward_indices, unused_grad_backward_indices) = \
                     _LeanFFN._i2h_backward(ctx, grad_hid, input_ln_2d)
-            del grad_hid
 
             if any(ctx.needs_input_grad[0:3]):
                 partial_grad_input_2d, grad_ln_weight, grad_ln_bias = torch.autograd.grad(

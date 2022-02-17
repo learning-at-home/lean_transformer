@@ -4,13 +4,13 @@ from typing import Optional, Tuple
 
 from torch import nn as nn
 from transformers import PretrainedConfig
-from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutput
 
 from lib.modules import LeanFFN, LeanSelfAttention, maybe_script
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix
 from lib.modules.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
+from lib.modules.utils import ACT2FN
 
 
 class LeanTransformerConfig(PretrainedConfig):
@@ -79,8 +79,7 @@ class LeanTransformerConfig(PretrainedConfig):
         intermediate_size: int = 16384,
         block_size: int = 0,
         lowrank_dim: int = 0,
-        hidden_act: str = "gelu_new",
-        hidden_act_jit: bool = True,
+        hidden_act: str = "gelu_fused",
         hidden_act_gated: bool = False,
         attn_qkv_bias: bool = True,
         out_proj_bias: Optional[bool] = None,
@@ -119,7 +118,6 @@ class LeanTransformerConfig(PretrainedConfig):
 
         self.num_attention_heads = num_attention_heads
         self.hidden_act = hidden_act
-        self.hidden_act_jit = hidden_act_jit
         self.hidden_act_gated = hidden_act_gated
         self.layer_norm_eps = layer_norm_eps
         self.attn_qkv_bias = attn_qkv_bias
@@ -177,10 +175,8 @@ class LeanTransformerConfig(PretrainedConfig):
 
     @lru_cache()
     def get_activation_callable(self):
-        hidden_act_callable = ACT2FN[self.hidden_act] if isinstance(self.hidden_act, str) else self.hidden_act
+        hidden_act_callable = ACT2FN[self.hidden_act] if not callable(self.hidden_act) else self.hidden_act
         assert callable(hidden_act_callable)
-        if self.hidden_act_jit:
-            hidden_act_callable = maybe_script(hidden_act_callable)
         return hidden_act_callable
 
     def get_linear_layer(self, key: str, index: int, in_features: int, out_features: int, bias: bool) -> nn.Linear:
