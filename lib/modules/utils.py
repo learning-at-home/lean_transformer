@@ -40,4 +40,4 @@ class _FusedGeLU(torch.autograd.Function):
         return tmp
 
 
-ACT2FN = dict(HF_ACT2FN, gelu_fused=_FusedGeLU)
+ACT2FN = dict(HF_ACT2FN, gelu_fused=_FusedGeLU.apply)
