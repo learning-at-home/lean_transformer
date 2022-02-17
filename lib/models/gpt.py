@@ -36,7 +36,8 @@ class LeanGPTConfig(LeanTransformerConfig):
         *args,
         vocab_size: int = 50257,
         embedding_size: int = 1024,
-        type_vocab_size: int = 2,
+        tie_embedding_hidden_mapping: bool = True,
+        type_vocab_size: int = 0,
         pad_token_id: int = 0,
         bos_token_id: int = 2,
         eos_token_id: int = 3,
@@ -54,6 +55,9 @@ class LeanGPTConfig(LeanTransformerConfig):
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.type_vocab_size = type_vocab_size
+        self.tie_embedding_hidden_mapping = tie_embedding_hidden_mapping
+        if tie_embedding_hidden_mapping:
+            assert self.embedding_size != self.hidden_size, "there is no mapping to tie"
 
 
 class LeanGPTEmbeddings(nn.Module):
@@ -114,13 +118,16 @@ class LeanGPTEmbeddings(nn.Module):
         return embeddings
 
 
-class TiedMLMHead(nn.Module):
+class TiedLMHead(nn.Module):
     def __init__(self, config, embeddings: LeanGPTEmbeddings):
         super().__init__()
         self.embeddings = embeddings
 
         if config.embedding_size != config.hidden_size:
             self.hidden_bias = nn.Parameter(torch.zeros(config.embedding_size))
+            if not config.tie_embedding_hidden_mapping:
+                embedding_hidden_mapping = self.embeddings.embedding_hidden_mapping.weight
+                self.hidden_embedding_mapping = nn.Parameter(embedding_hidden_mapping.data.detach().clone().t())
 
         self.layer_norm = nn.LayerNorm(config.embedding_size)
         self.activation = config.get_activation_callable()
@@ -128,7 +135,7 @@ class TiedMLMHead(nn.Module):
 
     def forward(self, hidden_states):
         if hasattr(self, "hidden_bias"):
-            weight = self.embeddings.embedding_hidden_mapping.weight.t()
+            weight = getattr(self, "hidden_embedding_mapping", self.embeddings.embedding_hidden_mapping.weight.t())
             hidden_states = F.linear(input=hidden_states, weight=weight, bias=self.hidden_bias)
 
         hidden_states = self.activation(hidden_states)
@@ -147,7 +154,7 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         self.config = config
         self.embeddings = LeanGPTEmbeddings(config)
         self.transformer = LeanTransformer(config)
-        self.lm_head = TiedMLMHead(config, self.embeddings)
+        self.lm_head = TiedLMHead(config, self.embeddings)
         self.init_weights()
 
     def get_input_embeddings(self):

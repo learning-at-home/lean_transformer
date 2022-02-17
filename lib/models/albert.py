@@ -213,7 +213,7 @@ class AlbertMLMHead(nn.Module):
         self.bias = nn.Parameter(torch.zeros(config.vocab_size))
         self.dense = nn.Linear(config.hidden_size, config.embedding_size)
         self.decoder = nn.Linear(config.embedding_size, config.vocab_size)
-        self.activation = ACT2FN[config.hidden_act]
+        self.activation = config.get_activation_callable()
         self.decoder.bias = self.bias
 
     def forward(self, hidden_states):
