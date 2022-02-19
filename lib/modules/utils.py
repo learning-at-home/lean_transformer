@@ -40,8 +40,7 @@ class GELU(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
         input, = ctx.saved_tensors
-        tmp = gelu_back(grad_output, input)
-        return tmp
+        return gelu_back(grad_output, input)
 
 
 ACT2FN = dict(HF_ACT2FN, gelu=GELU.apply)
