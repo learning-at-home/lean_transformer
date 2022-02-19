@@ -121,7 +121,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.hidden_act_gated = hidden_act_gated
         self.layer_norm_eps = layer_norm_eps
         self.attn_qkv_bias = attn_qkv_bias
-        self.out_proj_bias = out_proj_bias
+        self.out_proj_bias = out_proj_bias if out_proj_bias is not None else not sandwich_norm
         self.sandwich_norm = sandwich_norm
         self.reversible = reversible
 
