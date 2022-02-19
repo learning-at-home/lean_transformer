@@ -145,8 +145,6 @@ class _LeanFFN(torch.autograd.Function):
         ctx._use_sandwich = sandwich_ln_weight is not None
 
         dropout_mask, pre_sandwich = None, None  # optional tensors to save
-
-        #input = input.to(torch.float32, copy=False)  # accumulate residuals to fp32; no-op if already fp32
         input_2d = input.view(-1, input.shape[-1])
 
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
@@ -240,7 +238,7 @@ class _LeanFFN(torch.autograd.Function):
             pre_activation.requires_grad_(False)
             del hid_act
 
-        # backward(... -> input_layernorm -> liner_i2h -> ...)
+        # backward(... -> input_layernorm -> linear_i2h -> ...)
         with torch.enable_grad():
             # rematerialize input_ln
             input_2d.requires_grad_(True)
