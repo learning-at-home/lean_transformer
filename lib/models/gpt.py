@@ -95,14 +95,13 @@ class LeanGPTEmbeddings(nn.Module):
 
         seq_length = input_shape[1]
 
-        if token_type_ids is None and self.token_type_embeddings is not None:
-            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
-
         if inputs_embeds is None:
             inputs_embeds = self.word_embeddings(input_ids)
 
         embeddings = inputs_embeds
 
+        if token_type_ids is None and self.token_type_embeddings is not None:
+            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=embeddings.device)
         if token_type_ids is not None:
             token_type_embeddings = self.token_type_embeddings(token_type_ids)
             embeddings += token_type_embeddings
