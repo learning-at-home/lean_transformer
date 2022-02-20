@@ -36,28 +36,29 @@ class LeanGPTConfig(LeanTransformerConfig):
         vocab_size: int = 50257,
         embedding_size: int = 1024,
         lm_head_nonlinear: bool = True,
-        tie_embeddings: bool = True,
-        tie_embedding_hidden_mapping: bool = True,
+        tie_word_embeddings: bool = True,
+        tie_embedding_hidden_mapping: bool = False,
         type_vocab_size: int = 0,
         pad_token_id: int = 0,
         bos_token_id: int = 2,
         eos_token_id: int = 3,
         **kwargs
     ):
+        if type_vocab_size != 0:
+            logger.warning("token types are not used in LeanGPT")
         super().__init__(
             *args,
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
             type_vocab_size=type_vocab_size,
-            tie_word_embeddings=True,
             **kwargs
         )
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.type_vocab_size = type_vocab_size
         self.lm_head_nonlinear = lm_head_nonlinear
-        self.tie_embeddings = tie_embeddings
+        self.tie_word_embeddings = tie_word_embeddings
         self.tie_embedding_hidden_mapping = tie_embedding_hidden_mapping
         if tie_embedding_hidden_mapping:
             assert self.embedding_size != self.hidden_size, "there is no mapping to tie"
@@ -136,7 +137,7 @@ class LeanGPTHead(nn.Module):
 
         self.layer_norm = nn.LayerNorm(config.embedding_size)
         self.activation = config.get_activation_callable() if config.lm_head_nonlinear else None
-        if not config.tie_embeddings:
+        if not config.tie_word_embeddings:
             embeddings = self.embeddings.word_embeddings.weight
             self.logits_weight = nn.Parameter(embeddings.data.detach().clone())
 
