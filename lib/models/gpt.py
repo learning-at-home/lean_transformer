@@ -44,8 +44,6 @@ class LeanGPTConfig(LeanTransformerConfig):
         eos_token_id: int = 3,
         **kwargs
     ):
-        if type_vocab_size != 0:
-            logger.warning("token types are not used in LeanGPT")
         super().__init__(
             *args,
             pad_token_id=pad_token_id,
@@ -107,7 +105,7 @@ class LeanGPTEmbeddings(nn.Module):
 
         if token_type_ids is not None:
             token_type_embeddings = self.token_type_embeddings(token_type_ids)
-            embeddings = inputs_embeds + token_type_embeddings
+            embeddings += token_type_embeddings
 
         if self.position_embeddings is not None:
             if position_ids is None:
@@ -224,11 +222,14 @@ class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
         assert not torch.is_floating_point(attention_mask), "model requires boolean or int mask with binary 0/1 entries"
         if token_type_ids is None:
             if hasattr(self.embeddings, "token_type_ids"):
+                assert self.embeddings.token_type_embeddings is not None
                 buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
                 buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
                 token_type_ids = buffered_token_type_ids_expanded
-            else:
+            elif self.embeddings.token_type_embeddings is not None:
                 token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+            else:
+                logger.debug("Not creating token type ids: they are not used by the model")
 
         extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
         extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
