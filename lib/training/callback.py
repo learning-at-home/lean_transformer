@@ -111,7 +111,7 @@ class CollaborativeCallback(SynchronizationCallback):
         return torch.save(
             {
                 "model": self.task.model.state_dict(),
-                "training": self.optimizer.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
                 "scheduler": self.optimizer.state_averager.scheduler.state_dict(),
                 "local_epoch": self.optimizer.local_epoch,
             },
@@ -126,7 +126,7 @@ class CollaborativeCallback(SynchronizationCallback):
 
         if not check_epoch or backup_epoch >= current_epoch:
             self.task.model.load_state_dict(state["model"], strict=False)
-            self.optimizer.load_state_dict(state["training"])
+            self.optimizer.load_state_dict(state["optimizer"])
             self.optimizer.state_averager.scheduler.load_state_dict(state["scheduler"])
 
             if self.optimizer.offload_optimizer:
