@@ -10,7 +10,7 @@ from lib.modules import LeanFFN, LeanSelfAttention, maybe_script
 from lib.modules.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
 from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix
 from lib.modules.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
-from lib.modules.utils import ACT2FN
+from lib.modules.functional import ACT2FN
 
 
 class LeanTransformerConfig(PretrainedConfig):

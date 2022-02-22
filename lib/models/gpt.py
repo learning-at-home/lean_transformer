@@ -129,8 +129,8 @@ class LeanGPTHead(nn.Module):
         if config.embedding_size != config.hidden_size:
             self.hidden_bias = nn.Parameter(torch.zeros(config.embedding_size))
             if not config.tie_embedding_hidden_mapping:
-                embedding_hidden_mapping = self.embeddings.embedding_hidden_mapping.weight
-                self.hidden_embedding_mapping = nn.Parameter(embedding_hidden_mapping.data.detach().clone().t())
+                embedding_hidden_mapping_t = self.embeddings.embedding_hidden_mapping.weight.detach().t()
+                self.hidden_embedding_mapping = nn.Parameter(embedding_hidden_mapping_t.clone().contiguous())
 
         self.layer_norm = nn.LayerNorm(config.embedding_size)
         self.activation = config.get_activation_callable() if config.lm_head_nonlinear else None

@@ -6,7 +6,7 @@ import einops
 import torch
 import torch.nn.functional as F
 
-from lib.modules.utils import maybe_script
+from lib.modules.functional import maybe_script
 
 
 @functools.lru_cache

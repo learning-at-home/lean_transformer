@@ -8,7 +8,7 @@ import torch
 import torch.distributed
 import torch.nn as nn
 from hivemind.utils.logging import get_logger
-from lib.modules.utils import maybe_script
+from lib.modules.functional import maybe_script
 
 logger = get_logger(__file__)
 

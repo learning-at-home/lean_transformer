@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
 from lib.modules.rotary import RotaryEmbeddings
-from lib.modules.utils import maybe_script
+from lib.modules.functional import maybe_script
 
 
 class LeanSelfAttention(nn.Module):
