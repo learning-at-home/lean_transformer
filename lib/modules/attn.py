@@ -109,7 +109,6 @@ class SimpleAttentionCore(nn.Module):
         )
 
     @staticmethod
-    @maybe_script
     def _attention_core_forward(
             query: torch.Tensor,
             key: torch.Tensor,
