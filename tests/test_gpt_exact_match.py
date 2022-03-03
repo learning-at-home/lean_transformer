@@ -42,6 +42,8 @@ def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
     assert torch.allclose(output["logits"], test_data["logits"], rtol=rtol, atol=atol), "Logits do not match reference"
     for name, param in model.named_parameters():
         assert param.grad is not None, f"Param {name} has no grad"
+        if test_data["grads"][name].norm() != 0:
+            assert param.grad.norm().item() != 0, f"param {name} has zero gradients"
         assert torch.allclose(param.grad, test_data["grads"][name], rtol=rtol, atol=atol), \
             f"Grad w.r.t. {name} does not match reference"
 
