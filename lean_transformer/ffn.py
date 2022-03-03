@@ -25,6 +25,7 @@ class LeanFFN(nn.Module):
        more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
     :param dropout: hidden dropout probability, applied to the output projection (before adding residual)
     :param residual: if True, adds the original layer input to the final layer output
+    :param custom_grad: if True (default), use custom backprop code that saves memory at the cost of ~5% extra compute
 
     :param dense_i2h: custom *first* linear layer (hidden_size -> intermediate_size or 2x indermediate_size)
     :param dense_h2o: custom *second* linear layer (intermediate_size -> hidden_size)
@@ -42,13 +43,15 @@ class LeanFFN(nn.Module):
         dense_i2h: Optional[nn.Linear] = None,
         dense_h2o: Optional[nn.Linear] = None,
         residual: bool = True,
+        custom_grad: bool = True,
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
         self.dense_i2h = nn.Linear(hidden_size, i2h_out_features) if dense_i2h is None else dense_i2h
         self.dense_h2o = nn.Linear(intermediate_size, hidden_size) if dense_h2o is None else dense_h2o
-        assert type(self.dense_i2h) in (nn.Linear, GeneralizedLinear), "only Linear and GeneralizedLinear are supported"
-        assert type(self.dense_h2o) in (nn.Linear, GeneralizedLinear), "only Linear and GeneralizedLinear are supported"
+        if custom_grad:
+            assert type(self.dense_i2h) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
+            assert type(self.dense_h2o) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
         assert self.dense_i2h.in_features == self.dense_h2o.out_features == hidden_size
         assert self.dense_i2h.out_features == i2h_out_features and self.dense_h2o.in_features == intermediate_size
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
@@ -57,8 +60,28 @@ class LeanFFN(nn.Module):
         self.gated = gated
         self.dropout = dropout
         self.residual = residual
+        self.custom_grad = custom_grad
 
     def forward(self, input):
+        return self._forward_custom(input) if self.custom_grad else self._forward_pytorch(input)
+
+    def _forward_pytorch(self, input):
+        input_2d = input.view(-1, input.shape[-1])
+        input_ln = F.layer_norm(
+            input_2d, input.shape[-1:], self.layer_norm.weight, self.layer_norm.bias, self.layer_norm.eps
+        )
+        pre_activation = self.dense_i2h(input_ln)
+        hid_act = _LeanFFN._apply_activation(pre_activation, self.activation, gated=self.gated)
+
+        out = self.dense_h2o(hid_act)
+        if self.sandwich_norm:
+            out = self.sandwich_norm(out)
+        out = F.dropout(out, self.dropout, self.training)
+        if self.residual:
+            out = out.add(input_2d)
+        return out.view(*input.shape)
+
+    def _forward_custom(self, input):
         sandwich_ln_weight = sandwich_ln_bias = None
         if self.sandwich_norm is not None:
             sandwich_ln_weight, sandwich_ln_bias = self.sandwich_norm.weight, self.sandwich_norm.bias

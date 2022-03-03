@@ -161,7 +161,8 @@ class ReferenceFFN(nn.Module):
         (1, 1, 1, False),
     ],
 )
-def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residual: bool):
+@pytest.mark.parametrize("custom_grad", [True, False])
+def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residual: bool, custom_grad: bool):
     torch.use_deterministic_algorithms(True)
 
     batch_size = 4
@@ -187,6 +188,7 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
         dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
         residual=residual,
+        custom_grad=custom_grad,
     )
     with torch.no_grad():
         baseline_ffn.sandwich_norm.bias[...] = torch.randn_like(baseline_ffn.sandwich_norm.bias)
