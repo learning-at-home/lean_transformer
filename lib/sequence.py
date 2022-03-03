@@ -34,7 +34,6 @@ class ActiveKwargs(nn.Module):
 class SequentialWithKwargs(nn.Sequential):
     def __init__(self, *modules: ActiveKwargs):
         for module in modules:
-            print(isinstance(module, ActiveKwargs), isinstance(module, ReversibleModule))
             assert isinstance(module, ActiveKwargs) or (
                 isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
             )
@@ -64,7 +63,7 @@ class ReversibleWithKwargs(ReversibleSequential):
                 isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
             )
         super().__init__(*modules, **kwargs)
-        wrapped_modules = [m for m in self.children() if isinstance(m, ReversibleModule)]
+        wrapped_modules = getattr(self, 'stem', [m for m in self.children() if isinstance(m, ReversibleModule)])
         assert len(wrapped_modules) == len(modules)
         self.stem = SequentialWithKwargs(*wrapped_modules)
 
