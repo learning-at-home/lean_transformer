@@ -86,7 +86,7 @@ class SimpleAttentionCore(nn.Module):
     def __init__(self, hidden_size: int, num_attention_heads: int, attention_probs_dropout: float = 0.0):
         super().__init__()
         assert hidden_size % num_attention_heads == 0
-        self.attention_dropout = nn.Dropout(attention_probs_dropout, inplace=False)
+        self.attention_dropout = nn.Dropout(attention_probs_dropout)
         self.hidden_size, self.num_attention_heads = hidden_size, num_attention_heads
         self.attention_head_size = hidden_size // num_attention_heads
 
@@ -135,7 +135,8 @@ class SimpleAttentionCore(nn.Module):
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
-        attention_probs = torch.dropout(attention_probs, attention_dropout, training)
+        if training and attention_dropout != 0:
+            attention_probs = torch.dropout(attention_probs, attention_dropout, training)
         attention_output = torch.matmul(attention_probs, value)
         attention_output = attention_output.transpose(2, 1).flatten(2)
 
