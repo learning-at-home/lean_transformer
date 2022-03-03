@@ -34,8 +34,9 @@ class ActiveKwargs(nn.Module):
 class SequentialWithKwargs(nn.Sequential):
     def __init__(self, *modules: ActiveKwargs):
         for module in modules:
+            print(isinstance(module, ActiveKwargs), isinstance(module, ReversibleModule))
             assert isinstance(module, ActiveKwargs) or (
-                isinstance(module, ReversibleModule) and isinstance(module.wrapped_module, ActiveKwargs)
+                isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
             )
         super().__init__(*modules)
         self.gradient_checkpointing = False
@@ -60,10 +61,12 @@ class ReversibleWithKwargs(ReversibleSequential):
     def __init__(self, *modules, **kwargs):
         for module in modules:
             assert isinstance(module, ActiveKwargs) or (
-                isinstance(module, ReversibleModule) and isinstance(module.wrapped_module, ActiveKwargs)
+                isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
             )
         super().__init__(*modules, **kwargs)
-        self.stem = SequentialWithKwargs(*self.stem)
+        wrapped_modules = [m for m in self.children() if isinstance(m, ReversibleModule)]
+        assert len(wrapped_modules) == len(modules)
+        self.stem = SequentialWithKwargs(*wrapped_modules)
 
     def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         inp1 = inp0 = input.to(torch.float32)  # enforce upcasting residuals to fp32

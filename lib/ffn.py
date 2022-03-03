@@ -6,8 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from lib.modules.linear import GeneralizedLinear, _GeneralizedLinear
-from lib.modules.functional import ACT2FN
+from lib.linear import GeneralizedLinear, _GeneralizedLinear
+from lib.functional import ACT2FN
 
 
 class LeanFFN(nn.Module):

@@ -1,6 +1,6 @@
 import torch
 
-from lib.modules.rotary import RotaryEmbeddings, get_auxiliary_tensors
+from lib.rotary import RotaryEmbeddings, get_auxiliary_tensors
 
 
 def test_rotary_embeddings():

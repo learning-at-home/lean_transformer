@@ -10,8 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from lib.modules.pixelfly import butterfly_matmul, butterfly_matmul_backward, get_butterfly_indices
-from lib.modules.functional import maybe_script
+from lib.pixelfly import butterfly_matmul, butterfly_matmul_backward, get_butterfly_indices
+from lib.functional import maybe_script
 
 
 class GeneralizedMatrix(nn.Module):

@@ -1,12 +1,12 @@
 ### A transformer that does not hog your GPU memory
 
-__This is an early in-development codebase:__ if you want a stable and documented hivemind codebase, look at [CALM](https://github.com/NCAI-Research/CALM) or [dalle-hivemind](https://github.com/learning-at-home/dalle-hivemind).
-
 LeanTransformer implements a specific version of transformer with two goals in mind:
 - using as little GPU memory as possible 
 - stable training for very large models
 
-**LeanTransformer is batch-first, i.e. it requires `[batch, length, hid_size]` tensors.**
+__This is an early in-development codebase:__ if you want a stable and documented version, look at [CALM](https://github.com/NCAI-Research/CALM) or [dalle-hivemind](https://github.com/learning-at-home/dalle-hivemind).
+
+**LeanTransformer is batch-first, i.e. it works on `[batch, length, hid_size]` tensors.**
 
 - Testing for correctness: ```PYTHONPATH=. pytest ./tests```
 
@@ -51,8 +51,8 @@ __Other features:__
 __Not implemented:__
 - In reversible mode, one can further save memory by computing backward in chunks:
   - a few tokens at a time for feedforward layers, since `grad(concat(mlp(x1), mlp(x2))) = concat(grad(mlp(x1)), grad(mlp(x2)))`
-  - a few heads at a time for self-attention, since `grad(head1 + head2) = grad(head1) + grad(head2)`, where head1 and head2 are attention outputs *after linear projection*
-- Attention could be computed in `O(sqrt(n))` memory [(Rabe et al, 2021)](https://arxiv.org/abs/2112.05682)
+  - a few queries at a time for self-attention, since `grad(head1 + head2) = grad(head1) + grad(head2)`, where head1 and head2 are attention outputs *after linear projection*
+- Attention could be computed in `O(sqrt(n))` memory [(Rabe et al, 2021)](https://arxiv.org/abs/2112.05682), but this may be overkill
 - No sparse or linear attention: they are great for very long sequences. However, for large models, **attention is not a bottleneck** in typical NLP and vision tasks (tested gpt-3 up to length 4096).
 - Per-block grad scaling as described in [(Ramesh et al, 2021)](https://arxiv.org/pdf/2102.12092.pdf) - we rely on Sandwich Norm to maintain stability up to 96 layers (did not test more). However, it would be nice to 
   have per-block scaling to avoid the need for an extra LayerNorm.
@@ -66,12 +66,12 @@ __[under constructuion]__ - use the instructions from CALM readme
 
 ### Acknowledgements:
 
-- Most of the architecture and stability optimizations were learned through the [BigScience](https://bigscience.huggingface.co) research workshop
+- Most of the architecture and stability optimizations systematized by the [BigScience](https://bigscience.huggingface.co) research workshop
+- [Hugging Face](huggingface.co) 
 - [YSDA](https://github.com/yandexdataschool/) community helped us survive through the early messy versions of this code
 - [NeuroPark](https://neuropark.co/) trained the first practical model (SahajBERT-XL, SoTA in bengali, [details here](https://arxiv.org/pdf/2106.10207.pdf))
-- TODO DALLE community: at least mention the demo, maybe we end up training something even cooler
-- TODO NCAI community: ask them how best to acknowledge them
-- TODO Hugging Face: ask them how best to acknowledge them
-- TODO Personal: stas00, samyam, jared, more? (this does not include co-authors: Tim,Lucile,Quentin,Denis,Gennady,etc; also, this does not include hivemind contributors)
+- [LAION community](https://laion.ai/#top) helped us put together basic DALLE training
+- [NCAI](https://github.com/NCAI-Research/CALM), an arabic community for training 
+- Personal thanks to [Stas Bekman](https://github.com/stas00/), [Tim Dettmers](https://timdettmers.com), [Lucas Nestler](https://github.com/clashluke), [Samyam Rajbhandari](https://github.com/samyam), [Deepak Narayanan](https://deepakn94.github.io/), [Jared Casper](https://github.com/jaredcasper), [Jeff Rasley](http://rasley.io/), as well as [all the people who contributed](https://github.com/learning-at-home/lean_transformer/graphs/contributors) to the code.
 
 </details>

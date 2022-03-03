@@ -5,7 +5,7 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
+from lib.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
 
 
 def adapted_linear_naive(
@@ -51,9 +51,9 @@ def test_semishared_linear_naive():
 
 
 class ReferenceLinear(nn.Module):
-    def __init__(self, shared_matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
+    def __init__(self, matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
-        self.shared_matrix = shared_matrix
+        self.shared_matrix = matrix
         self.out_features, self.in_features = self.shared_matrix.shape
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
 

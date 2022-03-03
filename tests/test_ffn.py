@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from lib.modules.ffn import LeanFFN
-from lib.modules.linear import GeneralizedLinear, GeneralizedMatrix
+from lib.ffn import LeanFFN
+from lib.linear import GeneralizedLinear, GeneralizedMatrix
 
 
 class SimpleFFN(nn.Module):
