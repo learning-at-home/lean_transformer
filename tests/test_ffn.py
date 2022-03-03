@@ -235,3 +235,33 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
 
     for grad_ref, grad_our in zip(grad_params_ref, grad_params_our):
         assert torch.allclose(grad_ref, grad_our, rtol, atol)
+
+
+def test_ffn_dropout():
+    torch.use_deterministic_algorithms(True)
+
+    batch_size = 4
+    seq_len = 128
+    dim = 32
+    num_layers = 4
+
+    for dropout in (0.0, 0.5):
+        our_ffn = LeanFFN(dim, 4 * dim, sandwich_norm=True, gated=True, dropout=dropout)
+        x = torch.rand(batch_size, seq_len, dim, device="cpu", requires_grad=True)
+
+        out = x
+        for i in range(num_layers):
+            out = our_ffn.forward(out)
+        out.norm().backward()
+
+        out1 = out
+        grad1 = x.grad.clone()
+        x.grad = None
+
+        out = x
+        for i in range(num_layers):
+            out = our_ffn.forward(out)
+        out.norm().backward()
+
+        assert torch.allclose(out, out1, rtol=1e-3, atol=1e-5) == (dropout == 0)
+        assert torch.allclose(x.grad, grad1, rtol=1e-3, atol=1e-5) == (dropout == 0)
