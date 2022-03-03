@@ -218,7 +218,7 @@ class _LeanFFN(torch.autograd.Function):
                     sandwich_out, [pre_sandwich, sandwich_ln_weight, sandwich_ln_bias], grad_outputs=grad_output_2d
                 )
                 pre_sandwich.requires_grad_(required_grad)
-                del pre_sandwich, sandwich_out
+                del pre_sandwich, sandwich_out, grad_output_2d
 
         # backward(... -> nonlinearity -> intermediate_layernorm -> linear_h2o -> ...)
         input_2d = input.view(-1, input.shape[-1])
