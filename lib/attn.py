@@ -133,10 +133,11 @@ class SimpleAttentionCore(nn.Module):
         # Normalize the attention scores to probabilities.
         attention_probs = torch.softmax(attention_scores, dim=-1)
 
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
         if training and attention_dropout != 0:
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
             attention_probs = torch.dropout(attention_probs, attention_dropout, training)
+
         attention_output = torch.matmul(attention_probs, value)
         attention_output = attention_output.transpose(2, 1).flatten(2)
 
