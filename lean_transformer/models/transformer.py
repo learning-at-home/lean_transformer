@@ -6,11 +6,11 @@ from torch import nn as nn
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput
 
-from lib import LeanFFN, LeanSelfAttention
-from lib.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
-from lib.linear import GeneralizedLinear, GeneralizedMatrix
-from lib.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
-from lib.functional import ACT2FN
+from lean_transformer import LeanFFN, LeanSelfAttention
+from lean_transformer.attn import RotaryAttentionCore, RotaryEmbeddings, SimpleAttentionCore
+from lean_transformer.linear import GeneralizedLinear, GeneralizedMatrix
+from lean_transformer.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
+from lean_transformer.functional import ACT2FN
 
 
 class LeanTransformerConfig(PretrainedConfig):

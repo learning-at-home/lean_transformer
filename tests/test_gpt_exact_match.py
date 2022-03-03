@@ -4,7 +4,7 @@ import os.path
 import torch
 from tqdm import trange
 
-from lib.models.gpt import LeanGPTConfig, LeanGPTForPreTraining
+from lean_transformer.models.gpt import LeanGPTConfig, LeanGPTForPreTraining
 
 HERE = os.path.abspath(os.path.dirname(__file__)) + "/"
 

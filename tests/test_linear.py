@@ -5,7 +5,7 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from lib.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
+from lean_transformer.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
 
 
 def adapted_linear_naive(
