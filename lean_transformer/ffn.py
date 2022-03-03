@@ -205,7 +205,7 @@ class _LeanFFN(torch.autograd.Function):
         # backward(... -> sandwich_norm -> dropout -> residual)
         grad_residual_2d = grad_output_2d if ctx._residual else None
         if dropout_mask is not None:
-            grad_output_2d = grad_output_2d.mul(dropout_mask.to(grad_output_2d.dtype))
+            grad_output_2d = grad_output_2d.mul_(dropout_mask)
         if ctx._use_sandwich:
             assert pre_sandwich is not None
             with torch.enable_grad():

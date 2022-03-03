@@ -5,13 +5,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from lean_transformer import ACT2FN
 from lean_transformer.ffn import LeanFFN
 from lean_transformer.linear import GeneralizedLinear, GeneralizedMatrix
+
+GELU = ACT2FN['gelu_fused']
 
 
 class SimpleFFN(nn.Module):
     def __init__(
-        self, hidden_size: int, intermediate_size: int, activation=F.gelu, layer_norm_eps=1e-12, dropout: float = 0.0
+        self, hidden_size: int, intermediate_size: int, activation=GELU, layer_norm_eps=1e-12, dropout: float = 0.0
     ):
         super().__init__()
         self.dense_i2h = nn.Linear(hidden_size, intermediate_size)
@@ -96,7 +99,7 @@ class ReferenceFFN(nn.Module):
         self,
         hidden_size: int,
         intermediate_size: int,
-        activation=F.gelu,
+        activation=GELU,
         gated: bool = False,
         layer_norm_eps: float = 1e-12,
         dropout: float = 0.0,
