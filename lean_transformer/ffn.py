@@ -191,7 +191,6 @@ class _LeanFFN(torch.autograd.Function):
         if training and dropout:
             out = torch.dropout_(out, dropout, training)
             dropout_mask = out == 0.0
-            # checking dropout after the fact is an
 
         if residual:
             out = torch.add(out, input_2d, out=out if 'xla' not in out.device.type else None)
