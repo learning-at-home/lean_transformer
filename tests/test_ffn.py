@@ -133,7 +133,7 @@ class ReferenceFFN(nn.Module):
             out = self.sandwich_norm(out)
         out = F.dropout(out, self.dropout, self.training)
         if self.residual:
-            out = out.add(input_2d)
+            out = out + input_2d
         return out.view(*input.shape)
 
     @staticmethod

@@ -76,9 +76,11 @@ class LeanFFN(nn.Module):
         out = self.dense_h2o(hid_act)
         if self.sandwich_norm:
             out = self.sandwich_norm(out)
-        out = F.dropout(out, self.dropout, self.training)
+
+        if self.dropout and self.training:
+            out = torch.dropout_(out, self.dropout, self.training)
         if self.residual:
-            out = out.add(input_2d)
+            out = out.add_(input_2d)
         return out.view(*input.shape)
 
     def _forward_custom(self, input):
@@ -186,9 +188,10 @@ class _LeanFFN(torch.autograd.Function):
             pre_sandwich = out
             out = F.layer_norm(pre_sandwich, pre_sandwich.shape[-1:], sandwich_ln_weight, sandwich_ln_bias, eps=ln_eps)
 
-        out = F.dropout(out, dropout, training, inplace=True)
         if training and dropout:
-            dropout_mask = (out == 0.0).to(torch.int8)
+            out = torch.dropout_(out, dropout, training)
+            dropout_mask = out == 0.0
+            # checking dropout after the fact is an
 
         if residual:
             out = torch.add(out, input_2d, out=out if 'xla' not in out.device.type else None)
