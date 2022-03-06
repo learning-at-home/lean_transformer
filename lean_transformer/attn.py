@@ -132,6 +132,7 @@ class SimpleAttentionCore(nn.Module):
 
         # Normalize the attention scores to probabilities.
         attention_probs = torch.softmax(attention_scores, dim=-1)
+        del attention_scores
 
         if training and attention_dropout != 0:
             # This is actually dropping out entire tokens to attend to, which might
