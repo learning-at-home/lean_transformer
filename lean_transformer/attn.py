@@ -120,12 +120,12 @@ class SimpleAttentionCore(nn.Module):
         new_kv_shape = key.shape[:-1] + (num_attention_heads, -1)
 
         query = query.view(new_query_shape).permute(0, 2, 1, 3)
-        key_transposed = key.view(new_kv_shape).permute(0, 2, 3, 1)  # swap to [..., head_size, seq_length]
+        key_transposed_scaled = key.view(new_kv_shape).permute(0, 2, 3, 1).div_(math.sqrt(query.shape[-1]))
         value = value.view(new_kv_shape).permute(0, 2, 1, 3)
         del key  # not to confuse with key_transposed
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query, key_transposed / math.sqrt(query.shape[-1]))
+        attention_scores = torch.matmul(query, key_transposed_scaled)
 
         if attention_mask is not None:
             attention_scores += attention_mask
