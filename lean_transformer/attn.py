@@ -124,7 +124,7 @@ class SimpleAttentionCore(nn.Module):
         value = value.view(new_kv_shape).permute(0, 2, 1, 3)
         del key  # not to confuse with key_transposed
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
+        # Take the dot product between "query" and "key" to get the raw attention scores
         attention_scores = torch.matmul(query, key_transposed_scaled)
 
         if attention_mask is not None:
