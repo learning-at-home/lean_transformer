@@ -1,4 +1,4 @@
-### A transformer that does not hog your GPU memory
+### [Under Construction] A transformer that does not hog your GPU memory
 
 LeanTransformer implements a specific version of transformer with two goals in mind:
 - using as little GPU memory as possible 
@@ -9,11 +9,6 @@ __This is an early in-development codebase:__ if you want a stable and documente
 **LeanTransformer is batch-first, i.e. it works on `[batch, length, hid_size]` tensors.**
 
 - Testing for correctness: ```PYTHONPATH=. pytest ./tests```
-
-
-<details>
-<summary>Readme under construction</summary>
-
 
 
 The core philosophy of LeanTransformer is to __replace torch.autograd with grad students__. Automatic differentiation is
