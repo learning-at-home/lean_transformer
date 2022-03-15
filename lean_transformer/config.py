@@ -71,7 +71,7 @@ class LeanTransformerConfig(PretrainedConfig):
         num_inner_matrices: int = 1,
         adapter_dim: int = 0,
         num_attention_heads: int = 64,
-        intermediate_size: int = 16384,
+        intermediate_size: Optional[int] = None,
         block_size: int = 0,
         lowrank_dim: int = 0,
         hidden_act: str = "gelu_fused",
@@ -82,12 +82,14 @@ class LeanTransformerConfig(PretrainedConfig):
         reversible: bool = False,
         hidden_dropout_prob: float = 0,
         attention_probs_dropout_prob: float = 0,
-        attention_type: str = "rotary",
+        attention_type: str = "simple",
         layer_norm_eps: float = 1e-12,
         rotary_embedding_base: int = 10_000,
         initializer_range: Optional[float] = None,
         **kwargs,
     ):
+        if intermediate_size is None:
+            intermediate_size = 4 * hidden_size
         super().__init__(**kwargs)
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
