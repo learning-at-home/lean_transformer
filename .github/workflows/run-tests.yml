@@ -27,7 +27,7 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Install lean_transformer
         run: |
-          pip install -e . --no-use-pep517
+          pip install -e .[dev] --no-use-pep517
       - name: Test
         run: | 
           pytest --cov hivemind -v tests
