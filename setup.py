@@ -31,7 +31,7 @@ setup(
     install_requires=install_requires,
     extras_require=extras,
     classifiers=[
-        "Development Status :: 4 - Alpha",
+        "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: MIT License",
