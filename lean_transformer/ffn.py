@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from lean_transformer.linear import GeneralizedLinear, _GeneralizedLinear
-from lean_transformer.functional import ACT2FN
+from lean_transformer.utils import ACT2FN
 
 
 class LeanFFN(nn.Module):

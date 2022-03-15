@@ -4,6 +4,11 @@ import os
 import torch
 from transformers.activations import ACT2FN as HF_ACT2FN
 
+try:
+    from hivemind.utils.logging import get_logger
+except ModuleNotFoundError:
+    from logging import getLogger as get_logger
+
 
 @functools.lru_cache()
 def maybe_script(fn: callable) -> callable:
