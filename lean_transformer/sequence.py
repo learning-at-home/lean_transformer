@@ -5,7 +5,7 @@ When using gradient checkpoints or reversible sequential, keyword arguments shou
 from typing import Callable, Sequence
 
 import torch
-from hivemind.utils.logging import get_logger
+from lean_transformer.utils import get_logger
 from revlib import ReversibleModule, ReversibleSequential
 from torch import nn as nn
 from torch.utils.checkpoint import checkpoint
