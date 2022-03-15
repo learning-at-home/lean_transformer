@@ -68,5 +68,3 @@ __[under constructuion]__ - use the instructions from CALM readme
 - [LAION community](https://laion.ai/#top) helped us put together basic DALLE training
 - [NCAI](https://github.com/NCAI-Research/CALM), an arabic community for training 
 - Personal thanks to [Stas Bekman](https://github.com/stas00/), [Tim Dettmers](https://timdettmers.com), [Lucas Nestler](https://github.com/clashluke), [Samyam Rajbhandari](https://github.com/samyam), [Deepak Narayanan](https://deepakn94.github.io/), [Jared Casper](https://github.com/jaredcasper), [Jeff Rasley](http://rasley.io/), as well as [all the people who contributed](https://github.com/learning-at-home/lean_transformer/graphs/contributors) to the code.
-
-</details>
