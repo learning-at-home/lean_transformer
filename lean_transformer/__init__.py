@@ -5,4 +5,4 @@ from .pixelfly import *
 from .rotary import *
 from .sequence import *
 
-__version__ = "0.3.0"
+__version__ = "0.3.0dev1"
