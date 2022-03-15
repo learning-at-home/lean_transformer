@@ -15,15 +15,8 @@ with codecs.open(os.path.join(here, "lean_transformer/__init__.py"), encoding="u
     version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", init_file.read(), re.M)
     version_string = version_match.group(1)
 
-extras = {}
-
 with open("requirements-dev.txt") as dev_requirements_file:
-    extras["dev"] = list(map(str, parse_requirements(dev_requirements_file)))
-
-with open("requirements-docs.txt") as docs_requirements_file:
-    extras["docs"] = list(map(str, parse_requirements(docs_requirements_file)))
-
-extras["all"] = extras["dev"] + extras["docs"]
+    extras = dict(dev=list(map(str, parse_requirements(dev_requirements_file))))
 
 setup(
     name="lean_transformer",
