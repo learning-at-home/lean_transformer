@@ -75,9 +75,3 @@ debian/reproducible-experiment-platform
 debian/files
 *.substvars
 *.debhelper.log
-
-# protobuf stuff
-hivemind/proto/*_pb2*
-
-# libp2p-daemon binary
-hivemind/hivemind_cli/p2pd
