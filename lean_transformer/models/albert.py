@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """PyTorch ALBERT modules that do not hog your GPU memory """
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -36,6 +37,8 @@ class LeanAlbertConfig(LeanTransformerConfig):
         *args,
         vocab_size: int = 30000,
         embedding_size: int = 128,
+        position_embedding_type: str = "rotary",
+        max_position_embeddings: Optional[int] = None,
         classifier_dropout_prob: float = 0.1,
         type_vocab_size: int = 2,
         pad_token_id: int = 0,
@@ -43,18 +46,36 @@ class LeanAlbertConfig(LeanTransformerConfig):
         eos_token_id: int = 3,
         **kwargs
     ):
+        assert position_embedding_type in ('absolute', 'rotary')
+        implied_attention_type = 'simple' if position_embedding_type == 'absolute' else 'rotary'
+        assert 'attention_type' not in kwargs or kwargs['attention_type'] == implied_attention_type
+        assert (max_position_embeddings is not None) == (position_embedding_type == 'absolute')
         super().__init__(
             *args,
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
             type_vocab_size=type_vocab_size,
+            attention_type=implied_attention_type,
             **kwargs
         )
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.classifier_dropout_prob = classifier_dropout_prob
+        self.position_embedding_type = position_embedding_type
+        self.max_position_embeddings = max_position_embeddings
         self.type_vocab_size = type_vocab_size
+
+    def get_input_position_embeddings(self) -> Optional[nn.Embedding]:
+        if self.position_embedding_type == "absolute":
+            return nn.Embedding(self.max_position_embeddings, self.embedding_size)
+        elif self.position_embedding_type == "rotary":
+            return None
+        else:
+            raise NotImplementedError(f"Unsupported embedding type: {self.position_embedding_type}")
+
+    def get_token_type_embeddings(self) -> Optional[nn.Embedding]:
+        return nn.Embedding(self.type_vocab_size, self.embedding_size) if self.type_vocab_size else None
 
 
 class LeanAlbertEmbeddings(nn.Module):

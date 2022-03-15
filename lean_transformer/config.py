@@ -50,9 +50,8 @@ class LeanTransformerConfig(PretrainedConfig):
     :note: Lan et al. ( arXiv:1909.11942 ) *disable* Dropout for pre-training, then re-enable it for fine-tuning
 
     :param layer_norm_eps: see layer_norm_eps in torch.nn.functional.layer_norm
-    :param position_embedding_type: either "absolute" (as in BERT) or "rotary" (arXiv:2104.09864 , used in GPT-J-6B)
-    :param max_position_embeddings: maximum sequence length, used only if position_embedding_type is "absolute"
-    :param rotary_embedding_base: base for computing the rotation periods, only if position_embedding_type is "rotary"
+    :param attention_type: either "simple" (as in BERT) or "rotary" (arXiv:2104.09864 , used in GPT-J-6B)
+    :param rotary_embedding_base: base for computing the rotation periods, only if attention_type is "rotary"
 
     :param initializer_range: standard deviation for gaussian noise used when initializing weight matrices, defaults
      to SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2) = sqrt(2 / (5 * hidden_size))
@@ -83,9 +82,8 @@ class LeanTransformerConfig(PretrainedConfig):
         reversible: bool = False,
         hidden_dropout_prob: float = 0,
         attention_probs_dropout_prob: float = 0,
+        attention_type: str = "rotary",
         layer_norm_eps: float = 1e-12,
-        position_embedding_type: str = "rotary",
-        max_position_embeddings: int = 512,
         rotary_embedding_base: int = 10_000,
         initializer_range: Optional[float] = None,
         **kwargs,
@@ -121,11 +119,8 @@ class LeanTransformerConfig(PretrainedConfig):
         self.sandwich_norm = sandwich_norm
         self.reversible = reversible
 
-        if position_embedding_type == "absolute":
-            assert max_position_embeddings is not None
-        self.position_embedding_type = position_embedding_type
+        self.attention_type = attention_type
         self.rotary_embedding_base = rotary_embedding_base
-        self.max_position_embeddings = max_position_embeddings
 
         self.hidden_dropout_prob = hidden_dropout_prob
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
@@ -140,15 +135,15 @@ class LeanTransformerConfig(PretrainedConfig):
 
     @lru_cache()
     def _get_rotary_cache(self):
-        assert self.position_embedding_type == "rotary"
+        assert self.attention_type == "rotary"
         return RotaryEmbeddings(self.hidden_size // self.num_attention_heads, self.rotary_embedding_base)
 
     def get_attention_core(self):
-        if self.position_embedding_type == "absolute":
+        if self.attention_type == "simple":
             return SimpleAttentionCore(
                 self.hidden_size, self.num_attention_heads, attention_probs_dropout=self.attention_probs_dropout_prob
             )
-        elif self.position_embedding_type == "rotary":
+        elif self.attention_type == "rotary":
             return RotaryAttentionCore(
                 self.hidden_size,
                 self.num_attention_heads,
@@ -156,18 +151,7 @@ class LeanTransformerConfig(PretrainedConfig):
                 attention_probs_dropout=self.attention_probs_dropout_prob,
             )
         else:
-            raise NotImplementedError(f"Unsupported embedding type: {self.position_embedding_type}")
-
-    def get_input_position_embeddings(self) -> Optional[nn.Embedding]:
-        if self.position_embedding_type == "absolute":
-            return nn.Embedding(self.max_position_embeddings, self.embedding_size)
-        elif self.position_embedding_type == "rotary":
-            return None
-        else:
-            raise NotImplementedError(f"Unsupported embedding type: {self.position_embedding_type}")
-
-    def get_token_type_embeddings(self) -> Optional[nn.Embedding]:
-        return nn.Embedding(self.type_vocab_size, self.embedding_size) if self.type_vocab_size else None
+            raise NotImplementedError(f"Unsupported attention type: {self.attention_type}")
 
     @lru_cache()
     def get_activation_callable(self):
