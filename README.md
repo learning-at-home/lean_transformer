@@ -4,12 +4,34 @@ LeanTransformer implements a specific version of transformer with two goals in m
 - using as little GPU memory as possible 
 - stable training for very large models
 
-__This is an early in-development codebase:__ if you want a stable and documented version, look at [CALM](https://github.com/NCAI-Research/CALM) or [dalle-hivemind](https://github.com/learning-at-home/dalle-hivemind).
+__This is code is under active development:__ if you want a stable and documented version, look at [CALM](https://github.com/NCAI-Research/CALM) or [dalle-hivemind](https://github.com/learning-at-home/dalle-hivemind).
 
-**LeanTransformer is batch-first, i.e. it works on `[batch, length, hid_size]` tensors.**
+__Basic usage:__ lean transformer works similarly to most models on [Hugging Face Transformers](https://huggingface.co/docs/transformers/index). The model can be instantiated from a config, run forward and backward, compute loss. One can use vanilla general-purpose LeanTransformer or one of pre-implemented models:
 
-- Testing for correctness: ```PYTHONPATH=. pytest ./tests```
+```python
+from transformers import AutoTokenizer
+from lean_transformer.models.gpt import LeanGPTConfig, LeanGPTForPreTraining
 
+config = LeanGPTConfig(
+    vocab_size=10 ** 4, hidden_size=768, num_hidden_layers=12,
+    position_embedding_type="rotary", hidden_act_gated=True
+)
+model = LeanGPTForPreTraining(config)
+tokenizer = AutoTokenizer.from_pretrained("gpt2-large")
+
+dummy_inputs = tokenizer("A cat sat on a mat", return_tensors="pt")
+outputs = model(**dummy_inputs, labels=dummy_inputs['input_ids'])
+outputs.loss.backward()
+```
+
+
+__All models are batch-first,__ i.e. they work on `[batch, length, hid_size]` or `[batch, height, width, channels]` tensors like the rest of HuggingFace stuff.
+
+
+A day will come a day when we explain all these modifications and provide instructions on how to tune them. Until then, we'll happily answer any questions __[on our discord](https://discord.gg/uGugx9zYvN)__.
+
+
+### How it works?
 
 The core philosophy of LeanTransformer is to __replace torch.autograd with grad students__. Automatic differentiation is
  great if you want to test ideas quickly, less so if a single training run [can cost over $4 million](https://lambdalabs.com/blog/demystifying-gpt-3/) (or [>1000 years in grad school](https://studyinrussia.ru/en/study-in-russia/cost-of-education-in-russia/)).
@@ -41,23 +63,7 @@ __Other features:__
 - __[option]__ Maintaining FP32 residuals in mixed precision training, learned from discussions with [Samyam](https://www.microsoft.com/en-us/research/people/samyamr/) and [Jeff](https://www.microsoft.com/en-us/research/people/jerasley/) from [DeepSpeed](https://github.com/microsoft/DeepSpeed)
 - __[option]__ Rotary Position Embeddings, proposed by [Su et al](https://arxiv.org/abs/2104.09864) and [popularized by EleutherAI](https://blog.eleuther.ai/rotary-embeddings/)
 - __[option]__ Gated activations (e.g. GeGLU) [(Shazeer et al, 2020)](https://arxiv.org/abs/2002.05202), based on [(Dauphin et al, 2016)](https://arxiv.org/abs/1612.08083)
-- __[option]__ Sequence length warmup aka Curriculum Learning [(Li et al, 2021)](https://arxiv.org/abs/2108.06084)
 
-__Not implemented:__
-- In reversible mode, one can further save memory by computing backward in chunks:
-  - a few tokens at a time for feedforward layers, since `grad(concat(mlp(x1), mlp(x2))) = concat(grad(mlp(x1)), grad(mlp(x2)))`
-  - a few queries at a time for self-attention, since `grad(head1 + head2) = grad(head1) + grad(head2)`, where head1 and head2 are attention outputs *after linear projection*
-- Attention could be computed in `O(sqrt(n))` memory [(Rabe et al, 2021)](https://arxiv.org/abs/2112.05682), but this may be overkill
-- No sparse or linear attention: they are great for very long sequences. However, for large models, **attention is not a bottleneck** in typical NLP and vision tasks (tested gpt-3 up to length 4096).
-- Per-block grad scaling as described in [(Ramesh et al, 2021)](https://arxiv.org/pdf/2102.12092.pdf) - we rely on Sandwich Norm to maintain stability up to 96 layers (did not test more). However, it would be nice to 
-  have per-block scaling to avoid the need for an extra LayerNorm.
-- Something else that we missed - please find us [on discord](https://discord.gg/uGugx9zYvN).
-
-A day will come a day when we explain all these modifications and provide instructions on how to tune them.
-[But it is not this day!](https://youtu.be/3Ri0-fahanU?t=25). Until then, we'll happily answer any questions __[on our discord](https://discord.gg/uGugx9zYvN)__.
-
-### Running the code
-__[under constructuion]__ - use the instructions from CALM readme
 
 ### Acknowledgements:
 
