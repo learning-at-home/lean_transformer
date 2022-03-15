@@ -30,6 +30,6 @@ jobs:
           pip install -e .[dev] --no-use-pep517
       - name: Test
         run: | 
-          pytest --cov hivemind -v tests
+          pytest --cov lean_transformer -v tests
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
