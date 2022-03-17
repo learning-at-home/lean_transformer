@@ -50,7 +50,7 @@ class LeanGPTConfig(LeanTransformerConfig):
     ):
         assert position_embedding_type in ('absolute', 'rotary')
         implied_attention_type = 'simple' if position_embedding_type == 'absolute' else 'rotary'
-        assert 'attention_type' not in kwargs or kwargs['attention_type'] == implied_attention_type
+        assert kwargs.pop('attention_type', implied_attention_type) == implied_attention_type
         assert (max_position_embeddings is not None) == (position_embedding_type == 'absolute')
         super().__init__(
             *args,
