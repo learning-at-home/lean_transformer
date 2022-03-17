@@ -86,7 +86,7 @@ class LeanTransformer(nn.Module):
             gradient_checkpointing: Optional[Union[bool, int]] = None,
             checkpoint_last: Optional[bool] = None,
             checkpoint_hook: Optional[saved_tensors_hooks] = None,
-            save_rng_state: Optional[bool] = None,
+            preserve_rng_state: Optional[bool] = None,
             checkpoint_attention_core: Optional[bool] = None,
             ffn_custom_grad: Optional[bool] = None,
     ):
@@ -102,7 +102,7 @@ class LeanTransformer(nn.Module):
            If False, does not apply checkpointing to last layers, which is faster but may cause OOM when computing loss
         :param checkpoint_hook: optionally compress gradient checkpoints with a user-defined autograd hook
            See https://pytorch.org/tutorials/intermediate/autograd_saved_tensors_hooks_tutorial.html for details.
-        :param save_rng_state: enable or disable saving RNG state for checkpoints or reversible layers.
+        :param preserve_rng_state: enable or disable saving RNG state for checkpoints or reversible layers.
           Setting this to False will slightly improve speed and memory if there is no randomness such as dropout.
           **Warning** if layers do contain randomness (e.g. dropout), save_rng_state=False may cause incorrect backprop
 
@@ -115,12 +115,12 @@ class LeanTransformer(nn.Module):
         if isinstance(sequential, ReversibleWithKwargs):
             if gradient_checkpointing or checkpoint_hook or checkpoint_last:
                 raise ValueError("Reversible does not support gradient checkpointing")
-            sequential.save_rng_state = save_rng_state
+            sequential.preserve_rng_state = preserve_rng_state
 
         else:
             assert isinstance(sequential, SequentialWithKwargs)
             sequential.configure_gradient_checkpointing(
-                gradient_checkpointing, checkpoint_hook, checkpoint_last, save_rng_state
+                gradient_checkpointing, checkpoint_last, checkpoint_hook, preserve_rng_state
             )
 
         for module in sequential:
@@ -146,11 +146,11 @@ class OptimizationsMixin(PreTrainedModel):
     @staticmethod
     def _set_optimizations(module: nn.Module, *args, **kwargs):
         if isinstance(module, LeanTransformer):
-            module._set_optimizations(*args, **kwargs)
+            module.set_optimizations(*args, **kwargs)
 
     supports_gradient_checkpointing: bool = True
 
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
         """compatibility with hugging face gradient checkpointing"""
         if isinstance(module, LeanTransformer):
-            module._set_optimizations(gradient_checkpointing=value)
+            module.set_optimizations(gradient_checkpointing=value)
