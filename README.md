@@ -34,7 +34,7 @@ A day will come a day when we explain all these modifications and provide instru
 ### How it works?
 
 The core philosophy of LeanTransformer is to __replace torch.autograd with grad students__. Automatic differentiation is
- great if you want to test ideas quickly, less so if a single training run [can cost over $4 million](https://lambdalabs.com/blog/demystifying-gpt-3/) (or [>1000 years in grad school](https://studyinrussia.ru/en/study-in-russia/cost-of-education-in-russia/)).
+ great if you want to test ideas quickly, less so if a single training run [can cost over $4 million](https://lambdalabs.com/blog/demystifying-gpt-3/) (or [>1000 years in grad school](https://studyinrussia.ru/en/study-in-russia/cost-of-education-in-russia/)). So, we made a ton of tweaks that minimize memory usage.
 
 <details>
 <summary>Related work: GSO</summary>
