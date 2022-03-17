@@ -104,7 +104,8 @@ class SimpleAttentionCore(nn.Module):
         if attention_mask is not None:
             assert torch.is_floating_point(attention_mask), "expected float mask with negative values for masked items"
         return self._attention_core_forward(
-            query, key, value, attention_mask, self.num_attention_heads, self.attention_dropout.p, self.training
+            query, key, value, attention_mask, self.num_attention_heads, self.attention_dropout.p,
+            self.training, scale_inplace=False,
         )
 
     @staticmethod
@@ -113,14 +114,17 @@ class SimpleAttentionCore(nn.Module):
             key: torch.Tensor,
             value: torch.Tensor,
             attention_mask: Optional[torch.Tensor],
-            num_attention_heads: int, attention_dropout: float, training: bool
+            num_attention_heads: int, attention_dropout: float, training: bool, scale_inplace: bool
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # transpose from [batch, seq_length, full_hid_size] to [batch, num_heads, seq_length, head_size]
         new_query_shape = query.shape[:-1] + (num_attention_heads, -1)
         new_kv_shape = key.shape[:-1] + (num_attention_heads, -1)
 
         query = query.view(new_query_shape).permute(0, 2, 1, 3)
-        key_transposed_scaled = key.view(new_kv_shape).permute(0, 2, 3, 1).div_(math.sqrt(query.shape[-1]))
+        key_transposed_scaled = key.view(new_kv_shape).permute(0, 2, 3, 1)
+        divide_op = torch.Tensor.div_ if scale_inplace else torch.Tensor.div
+        key_transposed_scaled = divide_op(key_transposed_scaled, math.sqrt(query.shape[-1]))
+
         value = value.view(new_kv_shape).permute(0, 2, 1, 3)
         del key  # not to confuse with key_transposed
 
@@ -162,4 +166,6 @@ class RotaryAttentionCore(SimpleAttentionCore):
         return self.rotary_emb(tensor_split_heads).view(*tensor.shape)
 
     def forward(self, query, key, value, attention_mask):
-        return super().forward(self.rotate(query), self.rotate(key), value, attention_mask)
+        return self._attention_core_forward(
+            self.rotate(query), self.rotate(key), value, attention_mask, self.num_attention_heads,
+            self.attention_dropout.p, self.training, scale_inplace=True)
