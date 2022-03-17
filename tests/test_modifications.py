@@ -3,9 +3,6 @@ from typing import Union
 import pytest
 import torch
 
-torch.use_deterministic_algorithms(True)
-
-import torch
 from lean_transformer.models.albert import LeanAlbertConfig, LeanAlbertForPreTraining
 
 
@@ -16,8 +13,10 @@ from lean_transformer.models.albert import LeanAlbertConfig, LeanAlbertForPreTra
      (False, True, False, True, False), (False, True, False, False, True), (False, True, True, False, True),
      (False, 4, True, True, True), (False, 4, False, True, True), (False, 8, False, True, True),
      (False, 1, False, True, True), (False, 3, False, True, True), (False, 3, False, True, False)])
+@pytest.mark.forked
 def test_modification_consistency(reversible: bool, checkpoints: Union[bool, int], checkpoint_last: bool,
                                   custom_attn: bool, custom_ffn: bool):
+    torch.use_deterministic_algorithms(True)
     config = LeanAlbertConfig(
         vocab_size=1000, num_hidden_layers=8, hidden_size=64, num_attention_heads=8, hidden_dropout_prob=0.1,
         reversible=reversible)

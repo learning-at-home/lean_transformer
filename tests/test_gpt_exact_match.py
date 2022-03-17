@@ -1,6 +1,7 @@
 import json
 import os.path
 
+import pytest
 import torch
 from lean_transformer.models.gpt import LeanGPTConfig, LeanGPTForPreTraining
 from tqdm import trange
@@ -8,6 +9,7 @@ from tqdm import trange
 HERE = os.path.abspath(os.path.dirname(__file__)) + "/"
 
 
+@pytest.mark.forked
 def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
     """
     tests the correctness model outputs, loss and gradients for a small GPT model with all the features:

@@ -19,6 +19,7 @@ def adapted_linear_naive(
     return adapter_hid @ adapter_second.t() + shared_out
 
 
+@pytest.mark.forked
 def test_semishared_linear_naive():
     torch.manual_seed(1337)
     torch.use_deterministic_algorithms(True)
@@ -78,6 +79,7 @@ class ReferenceLinear(nn.Module):
 @pytest.mark.parametrize("adapter_dim", [0, 4])
 @pytest.mark.parametrize("lowrank_dim", [0, 60])
 @pytest.mark.parametrize("block_size", [0, 8])
+@pytest.mark.forked
 def test_linear(block_size: int, lowrank_dim: int, adapter_dim: int):
     torch.manual_seed(1337)
     torch.use_deterministic_algorithms(True)

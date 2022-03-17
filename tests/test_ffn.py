@@ -30,6 +30,7 @@ class SimpleFFN(nn.Module):
         return output + input
 
 
+@pytest.mark.forked
 def test_ffn_simple():
     torch.use_deterministic_algorithms(True)
 
@@ -161,6 +162,7 @@ class ReferenceFFN(nn.Module):
     ],
 )
 @pytest.mark.parametrize("custom_grad", [True, False])
+@pytest.mark.forked
 def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residual: bool, custom_grad: bool):
     torch.use_deterministic_algorithms(True)
 
@@ -238,6 +240,7 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         assert torch.allclose(grad_ref, grad_our, rtol, atol)
 
 
+@pytest.mark.forked
 def test_ffn_dropout():
     torch.use_deterministic_algorithms(True)
 

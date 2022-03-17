@@ -1,7 +1,9 @@
+import pytest
 import torch
 from lean_transformer.rotary import RotaryEmbeddings, get_auxiliary_tensors
 
 
+@pytest.mark.forked
 def test_rotary_embeddings():
     batch_size = 11
     seq_len = 50

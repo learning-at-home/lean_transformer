@@ -2,11 +2,13 @@ import math
 from typing import Optional
 
 import einops
+import pytest
 import torch
 from lean_transformer.pixelfly import (butterfly_factor_to_matrix, butterfly_matmul, butterfly_matmul_backward,
                                        get_butterfly_indices)
 
 
+@pytest.mark.forked
 def test_block_sparse_matmul_internals(
     out_features=8192,
     in_features=4096,
@@ -102,6 +104,7 @@ def reference_butterfly_layout_for_testing(
     return layout
 
 
+@pytest.mark.forked
 def test_butterfly_gradients():
     out_features = 3072 * 4
     in_features = 3072
