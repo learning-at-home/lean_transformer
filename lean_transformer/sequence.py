@@ -61,7 +61,8 @@ class SequentialWithKwargs(nn.Sequential):
                     enabled = use_checkpoints and (i != depth - 1 or self.checkpoint_last)
                     # pack kwargs with args since gradient checkpoint does not support kwargs
                     if enabled:
-                        input = checkpoint(self._run_modules, current_segment, input, kwarg_keys, *kwarg_values, *args)
+                        input = checkpoint(self._run_modules, current_segment, input, kwarg_keys, *kwarg_values, *args,
+                                           preserve_rng_state=self.preserve_rng_state)
                     else:
                         input = self._run_modules(current_segment, input, kwarg_keys, *kwarg_values, *args)
                     current_segment = []

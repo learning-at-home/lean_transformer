@@ -118,10 +118,14 @@ class LeanTransformer(nn.Module):
 
         else:
             assert isinstance(sequential, SequentialWithKwargs)
-            sequential.gradient_checkpointing = gradient_checkpointing
-            sequential.checkpoint_last = checkpoint_last
-            sequential.checkpoint_hook = checkpoint_hook
-            sequential.preserve_rng_state = preserve_rng_state
+            if gradient_checkpointing is not None:
+                sequential.gradient_checkpointing = gradient_checkpointing
+            if checkpoint_last is not None:
+                sequential.checkpoint_last = checkpoint_last
+            if checkpoint_hook is not None:
+                sequential.checkpoint_hook = checkpoint_hook
+            if preserve_rng_state is not None:
+                sequential.preserve_rng_state = preserve_rng_state
 
         for module in sequential.modules():
             if checkpoint_attention_core is not None and isinstance(module, LeanSelfAttention):
