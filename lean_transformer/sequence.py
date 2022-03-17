@@ -2,7 +2,7 @@
 A module that implements sequential model type with optional keyword arguments.
 When using gradient checkpoints or reversible sequential, keyword arguments should NOT require grad.
 """
-from typing import Callable, Sequence
+from typing import Callable, Sequence, Union
 
 import torch
 from lean_transformer.utils import get_logger
@@ -38,7 +38,9 @@ class SequentialWithKwargs(nn.Sequential):
                 isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
             )
         super().__init__(*modules)
-        self.gradient_checkpointing = False
+        self.gradient_checkpointing: Union[bool, int] = False
+        self.checkpoint_last = False
+        self.checkpoint_hook = None
 
     def forward(self, input: torch.Tensor, *args, **kwargs):
         kwarg_keys, kwarg_values = zip(*kwargs.items()) if (self.gradient_checkpointing and kwargs) else ([], [])

@@ -22,7 +22,7 @@ from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 
-from lean_transformer.transformer import GradientCheckpointingMixin, LeanTransformer
+from lean_transformer.transformer import LeanTransformer, OptimizationsMixin
 from lean_transformer.config import LeanTransformerConfig
 
 logger = logging.get_logger(__name__)
@@ -181,7 +181,7 @@ class LeanGPTHead(nn.Module):
         return self.logits_weight if self.logits_weight is not None else self.embeddings.word_embeddings.weight
 
 
-class LeanGPTForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
+class LeanGPTForPreTraining(OptimizationsMixin, PreTrainedModel):
     config_class = LeanGPTConfig
     base_model_prefix = "lean_gpt"
 

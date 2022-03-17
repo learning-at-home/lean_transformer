@@ -22,7 +22,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.albert.modeling_albert import AlbertForPreTrainingOutput
 from transformers.utils import logging
 
-from lean_transformer.transformer import GradientCheckpointingMixin, LeanTransformer
+from lean_transformer.transformer import LeanTransformer, OptimizationsMixin
 from lean_transformer.config import LeanTransformerConfig
 
 logger = logging.get_logger(__name__)
@@ -133,7 +133,7 @@ class LeanAlbertEmbeddings(nn.Module):
         return embeddings
 
 
-class LeanAlbertModel(GradientCheckpointingMixin, PreTrainedModel):
+class LeanAlbertModel(OptimizationsMixin, PreTrainedModel):
     config_class = LeanAlbertConfig
     base_model_prefix = "lean_albert"
     _keys_to_ignore_on_load_missing = [r"position_ids"]
@@ -265,7 +265,7 @@ class AlbertSOPHead(nn.Module):
         return logits
 
 
-class LeanAlbertForPreTraining(GradientCheckpointingMixin, PreTrainedModel):
+class LeanAlbertForPreTraining(OptimizationsMixin, PreTrainedModel):
     config_class = LeanAlbertConfig
     base_model_prefix = "lean_albert"
 

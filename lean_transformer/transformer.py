@@ -1,6 +1,9 @@
-from typing import Tuple
+from functools import partial
+from typing import Tuple, Optional, Union
 
 from torch import nn as nn
+from torch.autograd.graph import saved_tensors_hooks
+from transformers import PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutput
 
 from lean_transformer import LeanFFN, LeanSelfAttention
@@ -78,21 +81,76 @@ class LeanTransformer(nn.Module):
     def init_weights(self):
         self.apply(self.config.init_weights)
 
-    def gradient_checkpointing_enable(self, value: bool):
+    def configure_optimizations(
+            self, *,
+            gradient_checkpointing: Optional[Union[bool, int]] = None,
+            checkpoint_last: Optional[bool] = None,
+            checkpoint_hook: Optional[saved_tensors_hooks] = None,
+            save_rng_state: Optional[bool] = None,
+            checkpoint_attention_core: Optional[bool] = None,
+            ffn_custom_grad: Optional[bool] = None,
+    ):
+        """
+        Set one or more memory saving options for all compatible sub-modules. Options set to None remain unchanged.
+        Unlike main config, optimizatons do not affect model predictions, changing only memory/compute trade-offs.
+
+        :param gradient_checkpointing: configure gradient checkpointing for non-reversible models, True/False or integer
+          - if False, disable layer-wise gradient checkpoints (default)
+          - if True, apply checkpoints to each individual layer, attention and mlp are separate layers
+          - if an integer, use spread this many checkpoints evenly across all layers, similar to checkpoint_sequential
+        :param checkpoint_last: if True, checkpoints the last chunk of layers the same way as all other layers.
+           If False, does not apply checkpointing to last layers, which is faster but may cause OOM when computing loss
+        :param checkpoint_hook: optionally compress gradient checkpoints with a user-defined autograd hook
+           See https://pytorch.org/tutorials/intermediate/autograd_saved_tensors_hooks_tutorial.html for details.
+        :param save_rng_state: enable or disable saving RNG state for checkpoints or reversible layers.
+          Setting this to False will slightly improve speed and memory if there is no randomness such as dropout.
+          **Warning** if layers do contain randomness (e.g. dropout), save_rng_state=False may cause incorrect backprop
+
+        :param checkpoint_attention_core: re-compute attention weights during backward pass instead of storing them
+        :param ffn_custom_grad: use manual FFN backprop that saves memory at the cost of a little extra compute time
+
+        """
+
         sequential = self._get_sequential()
-        assert not value or isinstance(sequential, SequentialWithKwargs), "Reversible does not need checkpoints"
-        sequential.gradient_checkpointing = value
+        if isinstance(sequential, ReversibleWithKwargs):
+            if gradient_checkpointing or checkpoint_hook or checkpoint_last:
+                raise ValueError("Reversible does not support gradient checkpointing")
+            sequential.save_rng_state = save_rng_state
+
+        else:
+            assert isinstance(sequential, SequentialWithKwargs)
+            sequential.configure_gradient_checkpointing(
+                gradient_checkpointing, checkpoint_hook, checkpoint_last, save_rng_state
+            )
+
         for module in sequential:
-            if isinstance(module, LeanSelfAttention):
-                # disable local checkpoints if checkpointing globally -- and vice versa
-                module.checkpoint_attention_core = not value
+            if checkpoint_attention_core is not None and isinstance(module, LeanSelfAttention):
+                module.checkpoint_attention_core = checkpoint_attention_core
+            elif ffn_custom_grad is not None and isinstance(module, LeanFFN):
+                module.custom_grad = ffn_custom_grad
+            else:
+                # if this fails, you need to make sure that optimizations are propagated to new layers
+                assert not hasattr(module, "checkpoint_attention_core")
+                assert not hasattr(module, "custom_grad")
 
 
-class GradientCheckpointingMixin:
-    """A mix-in that enables gradient checkpoints in a huggingface model. See albert.py for usage examples."""
+class OptimizationsMixin(PreTrainedModel):
+    """adds set_optimizations to any huggingface model that involves LeanTransformer. See example in albert.py"""
+
+    def set_optimizations(self, *args, **kwargs):
+        """find any LeanTransformer sub-modules and pass settings to them. See LeanTransformer.set_optimizations """
+        if not any(isinstance(module, LeanTransformer) for module in self.modules()):
+            raise ValueError("Cannot set_optimizations: no LeanTransformer sub-modules found")
+        self.apply(partial(self._set_optimizations, *args, **kwargs))
+
+    @staticmethod
+    def _set_optimizations(module: nn.Module, *args, **kwargs):
+        if isinstance(module, LeanTransformer):
+            module._set_optimizations(*args, **kwargs)
 
     supports_gradient_checkpointing: bool = True
 
     def _set_gradient_checkpointing(self, module: nn.Module, value: bool):
+        """compatibility with hugging face gradient checkpointing"""
         if isinstance(module, LeanTransformer):
-            module.gradient_checkpointing_enable(value)
+            module._set_optimizations(gradient_checkpointing=value)
