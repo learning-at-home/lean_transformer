@@ -11,20 +11,22 @@ from lean_transformer.models.albert import LeanAlbertConfig, LeanAlbertForPreTra
 
 @pytest.mark.parametrize(
     "reversible,checkpoints,checkpoint_last,custom_attn,custom_ffn",
-    [(False, False, False, False, False), (True, False, False, False, False), (True, False, False, True, True),
+    [(False, False, False, False, False), (False, False, False, True, False), (False, False, False, False, True),
+     (True, False, False, False, False), (True, False, False, True, True),
      (False, True, False, True, False), (False, True, False, False, True), (False, True, True, False, True),
      (False, 4, True, True, True), (False, 4, False, True, True), (False, 8, False, True, True),
-     (False, 1, False, True, True), (False, 3, False, True, True)])
+     (False, 1, False, True, True), (False, 3, False, True, True), (False, 3, False, True, False)])
 def test_modification_consistency(reversible: bool, checkpoints: Union[bool, int], checkpoint_last: bool,
-                                  custom_attn: bool, custom_ffn):
+                                  custom_attn: bool, custom_ffn: bool):
     config = LeanAlbertConfig(
-        vocab_size=1000, num_hidden_layers=8, hidden_size=64, num_attention_heads=8, reversible=reversible)
+        vocab_size=1000, num_hidden_layers=8, hidden_size=64, num_attention_heads=8, hidden_dropout_prob=0.1,
+        reversible=reversible)
     model = LeanAlbertForPreTraining(config)
 
     batch = dict(
         input_ids=torch.tensor([
-            [  2, 339, 480,  60, 443,   9, 400,   3,   0,   0,   0,   0,   0,   0],
-            [  2, 339,  77, 257, 576, 202,  11, 417, 164, 881, 961, 631,   6,   3]]),
+            [2, 339, 480,  60, 443,   9, 400,   3,   0,   0,   0,   0,   0,   0],
+            [2, 339,  77, 257, 576, 202,  11, 417, 164, 881, 961, 631,   6,   3]]),
         attention_mask=torch.tensor([
             [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
             [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]))
@@ -33,6 +35,7 @@ def test_modification_consistency(reversible: bool, checkpoints: Union[bool, int
         model.set_optimizations(
             gradient_checkpointing=False, checkpoint_last=False,
             checkpoint_attention_core=False, ffn_custom_grad=False)
+        torch.manual_seed(1337)
         out = model(**batch)
         out.prediction_logits.sum().backward()
         ref_logits = out.prediction_logits.detach().clone()
@@ -42,6 +45,7 @@ def test_modification_consistency(reversible: bool, checkpoints: Union[bool, int
     model.set_optimizations(
         gradient_checkpointing=checkpoints, checkpoint_last=checkpoint_last,
         checkpoint_attention_core=custom_attn, ffn_custom_grad=custom_ffn)
+    torch.manual_seed(1337)
     out = model(**batch)
     out.prediction_logits.sum().backward()
     our_logits = out.prediction_logits.detach().clone()

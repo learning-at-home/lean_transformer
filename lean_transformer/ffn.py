@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
+from torch.utils.checkpoint import get_device_states, set_device_states
 
 from lean_transformer.linear import GeneralizedLinear, _GeneralizedLinear
 from lean_transformer.utils import ACT2FN
@@ -78,7 +79,7 @@ class LeanFFN(nn.Module):
             out = self.sandwich_norm(out)
 
         if self.dropout and self.training:
-            out = torch.dropout_(out, self.dropout, self.training)
+            out = torch.dropout(out, self.dropout, self.training)
         if self.residual:
             out = out + input_2d
         return out.view(*input.shape)
@@ -169,7 +170,7 @@ class _LeanFFN(torch.autograd.Function):
         ctx._activation, ctx._gated, ctx._residual = activation, gated, residual
         ctx._use_sandwich = sandwich_ln_weight is not None
 
-        dropout_mask, pre_sandwich = None, None  # optional tensors to save
+        dropout_rng, pre_sandwich = None, None  # optional tensors to save
         input_2d = input.view(-1, input.shape[-1])
 
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
@@ -189,15 +190,15 @@ class _LeanFFN(torch.autograd.Function):
             out = F.layer_norm(pre_sandwich, pre_sandwich.shape[-1:], sandwich_ln_weight, sandwich_ln_bias, eps=ln_eps)
 
         if training and dropout:
+            dropout_rng = _LeanFFN._get_device_state(out)
             out = torch.dropout_(out, dropout, training)
-            dropout_mask = out == 0.0
 
         if residual:
             out = torch.add(out, input_2d, out=out if 'xla' not in out.device.type else None)
 
         assert i2h_tensors[0] is input_ln and h2o_tensors[0] is hid_act  # we can rematerialize these tensors
         tensors_to_save = [
-            input, pre_activation, ln_weight, ln_bias, pre_sandwich, sandwich_ln_weight, sandwich_ln_bias, dropout_mask
+            input, pre_activation, ln_weight, ln_bias, pre_sandwich, sandwich_ln_weight, sandwich_ln_bias, dropout_rng
         ]
         tensors_to_save.extend((*i2h_tensors[1:], *h2o_tensors[1:]))
         ctx.save_for_backward(*tensors_to_save)
@@ -224,13 +225,15 @@ class _LeanFFN(torch.autograd.Function):
     def backward(ctx, grad_output):
         grad_input = grad_ln_weight = grad_ln_bias = grad_sandwich_ln_weight = grad_sandwich_ln_bias = None
         input, pre_activation, ln_weight, ln_bias, = ctx.saved_tensors[:4]
-        pre_sandwich, sandwich_ln_weight, sandwich_ln_bias, dropout_mask = ctx.saved_tensors[4: 8]
+        pre_sandwich, sandwich_ln_weight, sandwich_ln_bias, dropout_rng = ctx.saved_tensors[4: 8]
         grad_output_2d = grad_output.view(-1, grad_output.shape[-1])
 
         # backward(... -> sandwich_norm -> dropout -> residual)
         grad_residual_2d = grad_output_2d if ctx._residual else None
-        if dropout_mask is not None:
-            grad_output_2d = grad_output_2d.mul_(dropout_mask)
+        if dropout_rng is not None:
+            _LeanFFN._set_device_state(grad_output_2d, dropout_rng)
+            grad_output_2d = torch.dropout(grad_output_2d, ctx._dropout, ctx._training)
+
         if ctx._use_sandwich:
             assert pre_sandwich is not None
             with torch.enable_grad():
@@ -239,15 +242,15 @@ class _LeanFFN(torch.autograd.Function):
                 sandwich_out = F.layer_norm(
                     pre_sandwich, pre_sandwich.shape[-1:], sandwich_ln_weight, sandwich_ln_bias, eps=ctx._ln_eps
                 )
-                grad_output, grad_sandwich_ln_weight, grad_sandwich_ln_bias = torch.autograd.grad(
+                grad_output_2d, grad_sandwich_ln_weight, grad_sandwich_ln_bias = torch.autograd.grad(
                     sandwich_out, [pre_sandwich, sandwich_ln_weight, sandwich_ln_bias], grad_outputs=grad_output_2d
                 )
                 pre_sandwich.requires_grad_(required_grad)
-                del pre_sandwich, sandwich_out, grad_output_2d
+                del pre_sandwich, sandwich_out
 
         # backward(... -> nonlinearity -> intermediate_layernorm -> linear_h2o -> ...)
         input_2d = input.view(-1, input.shape[-1])
-        grad_h2o_output_2d = grad_output.view(-1, grad_output.shape[-1])
+        grad_h2o_output_2d = grad_output_2d.view(-1, grad_output.shape[-1])
 
         with torch.enable_grad():
             # rematerialize activation
@@ -291,3 +294,18 @@ class _LeanFFN(torch.autograd.Function):
                 grad_i2h_weight, grad_i2h_bias, grad_i2h_lowrank_first, grad_i2h_lowrank_second, None, None,
                 grad_h2o_weight, grad_h2o_bias, grad_h2o_lowrank_first, grad_h2o_lowrank_second, None, None,
                 grad_sandwich_ln_weight, grad_sandwich_ln_bias, None, None, None, None, None, None)
+
+    @staticmethod
+    def _get_device_state(x: torch.Tensor):
+        if x.device.type == 'cuda':
+            _, (state, ) = get_device_states(x)
+            return state
+        else:
+            return torch.get_rng_state()
+
+    @staticmethod
+    def _set_device_state(x: torch.Tensor, state: torch.Tensor):
+        if x.device.type == 'cuda':
+            return set_device_states([x.get_device()], [state])
+        else:
+            torch.set_rng_state(state)
