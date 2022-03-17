@@ -3,7 +3,6 @@ from typing import Optional
 
 import einops
 import torch
-
 from lean_transformer.pixelfly import (butterfly_factor_to_matrix, butterfly_matmul, butterfly_matmul_backward,
                                        get_butterfly_indices)
 

@@ -2,6 +2,7 @@ from typing import Union
 
 import pytest
 import torch
+
 torch.use_deterministic_algorithms(True)
 
 import torch

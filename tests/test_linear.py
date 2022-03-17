@@ -2,10 +2,9 @@ from typing import Optional
 
 import pytest
 import torch
+from lean_transformer.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
 from torch import nn as nn
 from torch.nn import functional as F
-
-from lean_transformer.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
 
 
 def adapted_linear_naive(

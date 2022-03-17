@@ -4,7 +4,6 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from lean_transformer import ACT2FN
 from lean_transformer.ffn import LeanFFN
 from lean_transformer.linear import GeneralizedLinear, GeneralizedMatrix
