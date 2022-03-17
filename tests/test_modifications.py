@@ -24,7 +24,7 @@ def test_modification_consistency(
 
 @pytest.mark.parametrize("dropout,preserve_rng,grad_fails", [
     (0.1, None, False), (0.1, True, False), (0.0, False, False), (0.1, False, True)])
-@pytest.mark.parametrize("reversible,checkpoints,checkpoint_last,custom_attn,custom_ffn", [(False, True, True, False, False)])
+@pytest.mark.parametrize("reversible,checkpoints,checkpoint_last,custom_attn,custom_ffn", [(False, True, True, False, True)])
 @pytest.mark.forked
 def test_preserve_rng(
         reversible, checkpoints, checkpoint_last, custom_attn, custom_ffn, preserve_rng, dropout, grad_fails):
@@ -60,17 +60,18 @@ def _test_modification_consistency(
         ref_grads = [param.grad.detach().clone() for param in model.albert.transformer.parameters()]
         model.zero_grad(set_to_none=True)
 
-    model.set_optimizations(
-        gradient_checkpointing=checkpoints, checkpoint_last=checkpoint_last,
-        checkpoint_attention_core=custom_attn, ffn_custom_grad=custom_ffn, preserve_rng_state=preserve_rng)
-    torch.manual_seed(1337)
-    out = model(**batch)
-    out.prediction_logits.sum().backward()
-    our_logits = out.prediction_logits.detach().clone()
-    our_grads = [param.grad.detach().clone() for param in model.albert.transformer.parameters()]
-    model.zero_grad(set_to_none=True)
-    assert torch.allclose(ref_logits, our_logits, rtol=0, atol=1e-5), abs(ref_logits-our_logits).max()
+    for i in range(2):
+        model.set_optimizations(
+            gradient_checkpointing=checkpoints, checkpoint_last=checkpoint_last,
+            checkpoint_attention_core=custom_attn, ffn_custom_grad=custom_ffn, preserve_rng_state=preserve_rng)
+        torch.manual_seed(1337)
+        out = model(**batch)
+        out.prediction_logits.sum().backward()
+        our_logits = out.prediction_logits.detach().clone()
+        our_grads = [param.grad.detach().clone() for param in model.albert.transformer.parameters()]
+        model.zero_grad(set_to_none=True)
+        assert torch.allclose(ref_logits, our_logits, rtol=0, atol=1e-5), abs(ref_logits-our_logits).max()
 
-    with pytest.raises(AssertionError) if grad_fails else nullcontext():
-        for g_ref, g_our in zip(ref_grads, our_grads):
-            assert torch.allclose(g_ref, g_our, rtol=0, atol=1e-5), abs(g_ref-g_our).max()
+        with pytest.raises(AssertionError) if grad_fails else nullcontext():
+            for g_ref, g_our in zip(ref_grads, our_grads):
+                assert torch.allclose(g_ref, g_our, rtol=0, atol=1e-5), abs(g_ref-g_our).max()
