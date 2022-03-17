@@ -2,7 +2,8 @@
 A module that implements sequential model type with optional keyword arguments.
 When using gradient checkpoints or reversible sequential, keyword arguments should NOT require grad.
 """
-from typing import Callable, Sequence, Union
+from contextlib import nullcontext
+from typing import Sequence, Union
 
 import torch
 from lean_transformer.utils import get_logger
@@ -41,21 +42,39 @@ class SequentialWithKwargs(nn.Sequential):
         self.gradient_checkpointing: Union[bool, int] = False
         self.checkpoint_last = False
         self.checkpoint_hook = None
+        self.preserve_rng_state = True
 
     def forward(self, input: torch.Tensor, *args, **kwargs):
-        kwarg_keys, kwarg_values = zip(*kwargs.items()) if (self.gradient_checkpointing and kwargs) else ([], [])
-        for module in self:
-            if self.gradient_checkpointing and torch.is_grad_enabled():
-                # pack kwargs with args since gradient checkpoint does not support kwargs
-                input = checkpoint(self._checkpoint_forward, module, input, kwarg_keys, *kwarg_values, *args)
-            else:
-                input = module(input, *args, **kwargs)
+        assert int(self.gradient_checkpointing) >= 0, "gradient checkpointing must be either bool or a positive integer"
+        kwarg_keys, kwarg_values = zip(*kwargs.items()) if kwargs else ([], [])
+        use_checkpoints = self.gradient_checkpointing and torch.is_grad_enabled()
+
+        depth = len(self)
+        num_segments = depth if isinstance(self.gradient_checkpointing, bool) else int(self.gradient_checkpointing)
+        segment_size = max(1, depth // num_segments)
+        current_segment = []
+
+        with self.checkpoint_hook if use_checkpoints and self.checkpoint_hook is not None else nullcontext():
+            for i, module in enumerate(self):
+                current_segment.append(module)
+                if len(current_segment) == segment_size or i == depth - 1:
+                    enabled = use_checkpoints and (i != depth - 1 or self.checkpoint_last)
+                    # pack kwargs with args since gradient checkpoint does not support kwargs
+                    if enabled:
+                        input = checkpoint(self._run_modules, current_segment, input, kwarg_keys, *kwarg_values, *args)
+                    else:
+                        input = self._run_modules(current_segment, input, kwarg_keys, *kwarg_values, *args)
+                    current_segment = []
+        assert len(current_segment) == 0
         return input
 
-    def _checkpoint_forward(self, module: Callable, input: torch.Tensor, kwarg_keys: Sequence[str], *etc):
-        kwargs = {key: etc[i] for i, key in enumerate(kwarg_keys)}
-        args = etc[len(kwarg_keys) :]
-        return module(input, *args, **kwargs)
+    @staticmethod
+    def _run_modules(modules: Sequence[ActiveKwargs], input: torch.Tensor, kwarg_keys: Sequence[str], *values):
+        kwargs = {key: values[i] for i, key in enumerate(kwarg_keys)}
+        args = values[len(kwarg_keys) :]
+        for module in modules:
+            input = module(input, *args, **kwargs)
+        return input
 
 
 class ReversibleWithKwargs(ReversibleSequential):

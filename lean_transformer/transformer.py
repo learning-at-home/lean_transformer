@@ -81,7 +81,7 @@ class LeanTransformer(nn.Module):
     def init_weights(self):
         self.apply(self.config.init_weights)
 
-    def configure_optimizations(
+    def set_optimizations(
             self, *,
             gradient_checkpointing: Optional[Union[bool, int]] = None,
             checkpoint_last: Optional[bool] = None,
@@ -113,17 +113,17 @@ class LeanTransformer(nn.Module):
 
         sequential = self._get_sequential()
         if isinstance(sequential, ReversibleWithKwargs):
-            if gradient_checkpointing or checkpoint_hook or checkpoint_last:
-                raise ValueError("Reversible does not support gradient checkpointing")
-            sequential.preserve_rng_state = preserve_rng_state
+            if any((gradient_checkpointing, checkpoint_last,  checkpoint_hook, preserve_rng_state)):
+                raise ValueError("Reversible model does not support gradient checkpointing")
 
         else:
             assert isinstance(sequential, SequentialWithKwargs)
-            sequential.configure_gradient_checkpointing(
-                gradient_checkpointing, checkpoint_last, checkpoint_hook, preserve_rng_state
-            )
+            sequential.gradient_checkpointing = gradient_checkpointing
+            sequential.checkpoint_last = checkpoint_last
+            sequential.checkpoint_hook = checkpoint_hook
+            sequential.preserve_rng_state = preserve_rng_state
 
-        for module in sequential:
+        for module in sequential.modules():
             if checkpoint_attention_core is not None and isinstance(module, LeanSelfAttention):
                 module.checkpoint_attention_core = checkpoint_attention_core
             elif ffn_custom_grad is not None and isinstance(module, LeanFFN):

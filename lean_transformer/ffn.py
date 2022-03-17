@@ -80,7 +80,7 @@ class LeanFFN(nn.Module):
         if self.dropout and self.training:
             out = torch.dropout_(out, self.dropout, self.training)
         if self.residual:
-            out = out.add_(input_2d)
+            out = out + input_2d
         return out.view(*input.shape)
 
     def _forward_custom(self, input):
