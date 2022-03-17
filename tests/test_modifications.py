@@ -50,7 +50,7 @@ def test_modification_consistency(reversible: bool, checkpoints: Union[bool, int
     our_logits = out.prediction_logits.detach().clone()
     our_grads = [param.grad.detach().clone() for param in model.albert.transformer.parameters()]
     model.zero_grad(set_to_none=True)
-    assert torch.allclose(ref_logits, our_logits)
+    assert torch.allclose(ref_logits, our_logits, rtol=0, atol=1e-5)
 
     for g_ref, g_our in zip(ref_grads, our_grads):
-        assert torch.allclose(g_ref, g_our)
+        assert torch.allclose(g_ref, g_our, rtol=0, atol=1e-5)
