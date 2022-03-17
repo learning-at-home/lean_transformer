@@ -37,7 +37,7 @@ def _test_modification_consistency(
         preserve_rng: Optional[bool], dropout: float, grad_fails: bool):
     torch.use_deterministic_algorithms(True)
     config = LeanAlbertConfig(
-        vocab_size=1000, num_hidden_layers=8, hidden_size=64, num_attention_heads=8,
+        vocab_size=1000, num_hidden_layers=4, hidden_size=32, num_attention_heads=4,
         hidden_dropout_prob=dropout, reversible=reversible)
     model = LeanAlbertForPreTraining(config)
 
