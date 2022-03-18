@@ -10,13 +10,13 @@ __Basic usage:__ lean transformer works similarly to most models on [Hugging Fac
 
 ```python
 from transformers import AutoTokenizer
-from lean_transformer.models.gpt import LeanGPTConfig, LeanGPTForPreTraining
+from lean_transformer.models.gpt import LeanGPTConfig, LeanGPTModel
 
 config = LeanGPTConfig(
-    vocab_size=10 ** 4, hidden_size=768, num_hidden_layers=12,
-    position_embedding_type="rotary", hidden_act_gated=True
+    vocab_size=10 ** 4, hidden_size=768, num_hidden_layers=12, num_attention_heads=16,
+    position_embedding_type="rotary", hidden_act_gated=True, tie_word_embeddings=True
 )
-model = LeanGPTForPreTraining(config)
+model = LeanGPTModel(config)
 tokenizer = AutoTokenizer.from_pretrained("gpt2-large")
 
 dummy_inputs = tokenizer("A cat sat on a mat", return_tensors="pt")

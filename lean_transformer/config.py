@@ -5,8 +5,9 @@ from typing import Optional
 from torch import nn as nn
 from transformers import PretrainedConfig
 
-from lean_transformer import RotaryEmbeddings, SimpleAttentionCore, RotaryAttentionCore, ACT2FN, GeneralizedLinear, \
-    GeneralizedMatrix
+from lean_transformer.attn import SimpleAttentionCore, RotaryAttentionCore, RotaryEmbeddings
+from lean_transformer.blocksparse import GeneralizedLinear, GeneralizedMatrix
+from lean_transformer.utils import ACT2FN
 
 
 class LeanTransformerConfig(PretrainedConfig):
@@ -31,8 +32,9 @@ class LeanTransformerConfig(PretrainedConfig):
 
     :param adapter_dim: if share_large_matrices is used, each layer can make LoRA-like adapters to the shared matrices.
       The adapter_dim corresponds to a hidden dimension of that adapter (see arXiv:2106.09685 for LoRA)
-    :param block_size: if specified, replaces weight matrices in FFN and attention with block-sparse butterfly matrices,
-      as defined in the Pixelated Buttefly ( arXiv:2112.00029 ). This does not affect embeddings or attention logits.
+    :param blocksparse_layout: if specified, replaces weight matrices in FFN and attention with block-sparse matrices,
+      defined by this layout. For instance, "pixelfly(block_size=128)" is Pixelated Buttefly (arXiv:2112.00029 ).
+      This does not affect embeddings or attention logits.
     :param lowrank_dim: if specified, add a (shared) low-rank component to the block-sparse matrix, as recommended
       in the PixelFly paper ( arXiv:2112.00029 ). The difference from adapter_dim is that adapters are NOT shared.
     :param hidden_act: activation function for FFN layers, either string or callable
@@ -72,7 +74,7 @@ class LeanTransformerConfig(PretrainedConfig):
         adapter_dim: int = 0,
         num_attention_heads: int = 64,
         intermediate_size: Optional[int] = None,
-        block_size: int = 0,
+        blocksparse_layout: Optional[str] = None,
         lowrank_dim: int = 0,
         hidden_act: str = "gelu_fused",
         hidden_act_gated: bool = False,
@@ -95,7 +97,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.intermediate_size = intermediate_size
         self.adapter_dim = adapter_dim
         self.lowrank_dim = lowrank_dim
-        self.block_size = block_size
+        self.blocksparse_layout = blocksparse_layout
 
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
@@ -184,14 +186,15 @@ class LeanTransformerConfig(PretrainedConfig):
         """
         assert 0 <= index <= self.total_shared_matrix_sets
         if key == "self_attn_qkv":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.block_size, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.blocksparse_layout, self.lowrank_dim)
         if key == "self_attn_out":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.block_size, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.blocksparse_layout, self.lowrank_dim)
         if key == "ffn_first":
-            return GeneralizedMatrix(self.hidden_size, self.intermediate_size * (2 if self.hidden_act_gated else 1),
-                                     self.block_size, self.lowrank_dim)
+            ffn_hidden_including_gate = self.intermediate_size * (2 if self.hidden_act_gated else 1)
+            return GeneralizedMatrix(
+                self.hidden_size, ffn_hidden_including_gate, self.blocksparse_layout, self.lowrank_dim)
         if key == "ffn_second":
-            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.block_size, self.lowrank_dim)
+            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.blocksparse_layout, self.lowrank_dim)
 
         raise NotImplementedError(f"Unexpected matrix key: {key}")
 

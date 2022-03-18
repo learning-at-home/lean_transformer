@@ -2,7 +2,7 @@ from typing import Optional
 
 import pytest
 import torch
-from lean_transformer.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
+from lean_transformer.blocksparse.linear import GeneralizedLinear, GeneralizedMatrix, _GeneralizedLinear
 from torch import nn as nn
 from torch.nn import functional as F
 
@@ -88,9 +88,10 @@ def test_linear(block_size: int, lowrank_dim: int, adapter_dim: int):
     batch_size = 4
     dim = 128
     num_layers = 4
+    layout = f"pixelfly(block_size={block_size})" if block_size else None
 
-    baseline_ffn = ReferenceLinear(GeneralizedMatrix(dim, dim, block_size, lowrank_dim), adapter_dim)
-    our_ffn = GeneralizedLinear(GeneralizedMatrix(dim, dim, block_size, lowrank_dim), adapter_dim)
+    baseline_ffn = ReferenceLinear(GeneralizedMatrix(dim, dim, layout, lowrank_dim), adapter_dim)
+    our_ffn = GeneralizedLinear(GeneralizedMatrix(dim, dim, layout, lowrank_dim), adapter_dim)
 
     assert our_ffn.load_state_dict(baseline_ffn.state_dict())
 

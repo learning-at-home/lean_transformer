@@ -10,18 +10,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from lean_transformer.pixelfly import butterfly_matmul, butterfly_matmul_backward, get_butterfly_indices
+from lean_transformer.blocksparse.layout import get_blocksparse_layout, get_indices_from_layout
+from lean_transformer.blocksparse.native_backend import blocksparse_matmul, blocksparse_matmul_backward
 from lean_transformer.utils import maybe_script
 
 
 class GeneralizedMatrix(nn.Module):
     """A module that stores a shared pytorch tensor for use in GeneralizedLinear layers"""
 
-    def __init__(self, in_features: int, out_features: int, block_size: int = 0, lowrank_dim: int = 0):
+    def __init__(
+            self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None, lowrank_dim: int = 0
+    ):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
 
-        if block_size == 0:
+        if blocksparse_layout is None:
             # fully-connected weight matrix
             self.weight = nn.Parameter(torch.empty(out_features, in_features))
             nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
@@ -29,11 +32,13 @@ class GeneralizedMatrix(nn.Module):
             self.forward_indices = self.backward_indices = None
         else:
             # block-sparse weights with additive butterfly pattern
-            forward_indices, backward_indices = get_butterfly_indices(
-                out_features, in_features, block_size, stretch=False
-            )
-            self.register_buffer("forward_indices", forward_indices)
-            self.register_buffer("backward_indices", backward_indices)
+            layout = get_blocksparse_layout(out_features, in_features, blocksparse_layout)
+            assert out_features / layout.shape[0] == in_features / layout.shape[1] == in_features // layout.shape[1]
+            block_size = in_features // layout.shape[1]
+            forward_indices, backward_indices = get_indices_from_layout(layout)
+            self.register_buffer("layout", layout, persistent=True)
+            self.register_buffer("forward_indices", forward_indices, persistent=True)
+            self.register_buffer("backward_indices", backward_indices, persistent=True)
             active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
             self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
             torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
@@ -61,7 +66,7 @@ class GeneralizedMatrix(nn.Module):
         :param ignore_lowrank: if True, the low-rank components (lowrank_dim) will not be used in matrix multiplication
         """
         if self.forward_indices is not None:
-            output = butterfly_matmul(input, self.weight, self.forward_indices)
+            output = blocksparse_matmul(input, self.weight, self.forward_indices)
         else:
             output = F.linear(input, self.weight)
         if self.lowrank_first is not None and not ignore_lowrank:
@@ -136,7 +141,7 @@ class _GeneralizedLinear(torch.autograd.Function):
     ):
         input_flat = input.view(-1, input.shape[-1])
         if forward_indices is not None:
-            output = butterfly_matmul(input_flat, main_weight, forward_indices)
+            output = blocksparse_matmul(input_flat, main_weight, forward_indices)
             if bias is not None:
                 output.add_(bias.to(output.dtype))
         else:
@@ -203,7 +208,7 @@ class _GeneralizedLinear(torch.autograd.Function):
                 grad_input_flat = torch.matmul(grad_output_flat, main_weight)
         else:
             # block-sparse shared matrix
-            grad_input_flat, grad_main_weight = butterfly_matmul_backward(
+            grad_input_flat, grad_main_weight = blocksparse_matmul_backward(
                 grad_output_flat, input_flat, main_weight, backward_indices,
                 input_requires_grad=needs_input_grad[0], weight_requires_grad=needs_input_grad[1])
 

@@ -4,9 +4,9 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from lean_transformer import ACT2FN
+from lean_transformer.utils import ACT2FN
 from lean_transformer.ffn import LeanFFN
-from lean_transformer.linear import GeneralizedLinear, GeneralizedMatrix
+from lean_transformer.blocksparse.linear import GeneralizedLinear, GeneralizedMatrix
 
 GELU = ACT2FN['gelu_fused']
 
@@ -171,14 +171,15 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
     dim = 32
     num_layers = 4
     block_size = 16
+    layout = f"pixelfly({block_size})"
     rtol, atol = 1e-4, 1e-5
     baseline_ffn = ReferenceFFN(
         dim,
         4 * dim,
         gated=True,
         sandwich_norm=True,
-        dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
-        dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
+        dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, layout, lowrank_dim), adapter_dim),
+        dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, layout, lowrank_dim), adapter_dim),
         residual=residual,
     )
     our_ffn = LeanFFN(
@@ -186,8 +187,8 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         4 * dim,
         gated=True,
         sandwich_norm=True,
-        dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, block_size, lowrank_dim), adapter_dim),
-        dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, block_size, lowrank_dim), adapter_dim),
+        dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, layout, lowrank_dim), adapter_dim),
+        dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, layout, lowrank_dim), adapter_dim),
         residual=residual,
         custom_grad=custom_grad,
     )

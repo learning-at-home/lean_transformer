@@ -4,8 +4,15 @@ from typing import Optional
 import einops
 import pytest
 import torch
-from lean_transformer.pixelfly import (butterfly_factor_to_matrix, butterfly_matmul, butterfly_matmul_backward,
-                                       get_butterfly_indices)
+from lean_transformer.blocksparse import butterfly_factor_to_matrix, blocksparse_matmul, blocksparse_matmul_backward
+from lean_transformer.blocksparse import get_blocksparse_layout, get_indices_from_layout
+
+
+def get_butterfly_indices(out_features, in_features, *args, **kwargs):
+    args_str = ', '.join(map(str, args))
+    kwargs_str = ', '.join(f"{key}={value}" for key, value in kwargs.items())
+    return get_indices_from_layout(get_blocksparse_layout(
+        out_features, in_features, layout=f"pixelfly({args_str}, {kwargs_str})"))
 
 
 @pytest.mark.forked
@@ -36,7 +43,7 @@ def test_block_sparse_matmul_internals(
     input[:, test_block * block_size : test_block * (block_size + 1)].fill_(1)
     # END SETUP TEST CONDITIONS
 
-    outputs = butterfly_matmul(input, weight, butterfly_flat_indices)
+    outputs = blocksparse_matmul(input, weight, butterfly_flat_indices)
 
     # BEGIN TEST CASE
     layout = reference_butterfly_layout_for_testing(
@@ -125,10 +132,10 @@ def test_butterfly_gradients():
     grad_output = torch.randn(3, 2, out_features)
 
     with torch.no_grad():
-        our_grad_input, our_grad_weight = butterfly_matmul_backward(grad_output, input, weight, backward_indices)
+        our_grad_input, our_grad_weight = blocksparse_matmul_backward(grad_output, input, weight, backward_indices)
 
     with torch.enable_grad():
-        out = butterfly_matmul(input, weight, forward_indices)
+        out = blocksparse_matmul(input, weight, forward_indices)
 
     out.backward(grad_output)
     assert torch.allclose(our_grad_input, input.grad)

@@ -3,7 +3,7 @@ import os.path
 
 import pytest
 import torch
-from lean_transformer.models.gpt import LeanGPTConfig, LeanGPTForPreTraining
+from lean_transformer.models.gpt import LeanGPTConfig, LeanGPTModel
 from tqdm import trange
 
 HERE = os.path.abspath(os.path.dirname(__file__)) + "/"
@@ -26,11 +26,10 @@ def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
     torch.use_deterministic_algorithms(True)
 
     atol, rtol = 1e-4, float("inf")
-    test_data = torch.load(filename)
+    test_data = convert_from_legacy(torch.load(filename))
 
-    config = LeanGPTConfig(**json.loads(test_data["config"]), out_proj_bias=True, tie_embedding_hidden_mapping=True)
-    # note: the keyword arguments in the previous line are for backward compatibility with the checkpoint
-    model = LeanGPTForPreTraining(config).train(False)
+    config = LeanGPTConfig(**json.loads(test_data["config"]))
+    model = LeanGPTModel(config).train(False)
 
     report = model.load_state_dict(test_data["state"])
     assert not report.missing_keys and not report.unexpected_keys, f"Checkpoint keys mismatch: {report}"
@@ -47,6 +46,24 @@ def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
             assert param.grad.norm().item() != 0, f"param {name} has zero gradients"
         assert torch.allclose(param.grad, test_data["grads"][name], rtol=rtol, atol=atol), \
             f"Grad w.r.t. {name} does not match reference"
+
+
+def convert_from_legacy(test_data: dict):
+    config = json.loads(test_data['config'])
+    if 'block_size' in config:
+        config['blocksparse_layout'] = f"pixelfly(block_size={config.pop('block_size')})"
+    config.update(out_proj_bias=True, tie_embedding_hidden_mapping=True)
+    test_data['config'] = json.dumps(config)
+
+    # add layout parameter
+    for name, param in LeanGPTModel(LeanGPTConfig(**config)).state_dict().items():
+        if name.endswith('.layout'):
+            print('A!', name)
+            assert name not in test_data["state"]
+            test_data["state"][name] = param
+        else:
+            assert name in test_data["state"]
+    return test_data
 
 
 def generate_gpt_test_data(
@@ -898,7 +915,7 @@ def generate_gpt_test_data(
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     config = LeanGPTConfig(**json.loads(config_json))
-    model = LeanGPTForPreTraining(config).to(device).train(True)
+    model = LeanGPTModel(config).to(device).train(True)
     train_batch = {key: value.to(device) for key, value in batch.items()}
 
     # overfit to a given batch

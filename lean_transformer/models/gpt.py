@@ -181,7 +181,7 @@ class LeanGPTHead(nn.Module):
         return self.logits_weight if self.logits_weight is not None else self.embeddings.word_embeddings.weight
 
 
-class LeanGPTForPreTraining(OptimizationsMixin, PreTrainedModel):
+class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
     config_class = LeanGPTConfig
     base_model_prefix = "lean_gpt"
 

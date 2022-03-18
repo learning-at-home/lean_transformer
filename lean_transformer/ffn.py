@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.utils.checkpoint import get_device_states, set_device_states
 
-from lean_transformer.linear import GeneralizedLinear, _GeneralizedLinear
+from lean_transformer.blocksparse.linear import GeneralizedLinear, _GeneralizedLinear
 from lean_transformer.utils import ACT2FN
 
 

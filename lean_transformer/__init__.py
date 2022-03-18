@@ -1,8 +1,9 @@
-from .attn import *
-from .ffn import *
-from .linear import *
-from .pixelfly import *
-from .rotary import *
-from .sequence import *
+from .ffn import LeanFFN
+from .attn import LeanSelfAttention, SimpleAttentionCore, RotaryAttentionCore
+from .rotary import RotaryEmbeddings, rotate
+from .sequence import SequentialWithKwargs, ReversibleWithKwargs, ActiveKwargs
+from .config import LeanTransformerConfig
+from .transformer import LeanTransformer, OptimizationsMixin
+from .blocksparse import *
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
