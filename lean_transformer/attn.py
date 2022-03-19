@@ -7,6 +7,8 @@ from torch.utils.checkpoint import checkpoint
 
 from lean_transformer.rotary import RotaryEmbeddings
 
+from . import batch_step_attn_core_func
+
 
 class LeanSelfAttention(nn.Module):
     def __init__(
@@ -16,6 +18,7 @@ class LeanSelfAttention(nn.Module):
         dropout: float = 0,
         layer_norm_eps: float = 1e-12,
         sandwich_norm: bool = False,
+        layer_norm: bool = True,
         dense_qkv: Optional[nn.Linear] = None,
         dense_out: Optional[nn.Linear] = None,
         residual: bool = True,
@@ -34,6 +37,7 @@ class LeanSelfAttention(nn.Module):
         :param hidden_size: base hidden size of the transformer, before q/k/v projections
         :param num_attention_heads: number of heads, as defined in the original transformer
         :param dropout: hidden dropout probability, applied to the output projection (before adding residual)
+        :param layer_norm: if set, applies layer norm to input tensor
         :param layer_norm_eps: see torch.nn.functional.layer_norm
         :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
            as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
@@ -58,13 +62,13 @@ class LeanSelfAttention(nn.Module):
         assert self.dense_qkv.in_features == self.dense_out.in_features == self.dense_out.out_features == hidden_size
         assert self.dense_qkv.out_features == hidden_size * 3
 
-        self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if layer_norm else None
         self.sandwich_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if sandwich_norm else None
         self.output_dropout = nn.Dropout(dropout, inplace=False)
         self.residual, self.checkpoint_attention_core = residual, checkpoint_attention_core
 
     def forward(self, hidden_states, attention_mask=None, output_attentions=False):
-        hidden_states_ln = self.layer_norm(hidden_states)
+        hidden_states_ln = self.layer_norm(hidden_states) if self.layer_norm else hidden_states
         qkv_output = self.dense_qkv(hidden_states_ln)
         query, key, value = qkv_output.split(self.hidden_size, dim=qkv_output.ndim - 1)
         attention_output, attention_probs = self._maybe_checkpoint(
@@ -169,3 +173,21 @@ class RotaryAttentionCore(SimpleAttentionCore):
         return self._attention_core_forward(
             self.rotate(query), self.rotate(key), value, attention_mask, self.num_attention_heads,
             self.attention_dropout.p, self.training, scale_inplace=True)
+
+
+class BatchStepAttentionCore(SimpleAttentionCore):
+    def __init__(self, hidden_size: int, num_attention_heads: int, batch_step: int = 8, **kwargs):
+        super().__init__(hidden_size, num_attention_heads, **kwargs)
+        assert hidden_size % num_attention_heads == 0
+        self.hidden_size, self.num_attention_heads = hidden_size, num_attention_heads
+        self.attention_head_size = hidden_size // num_attention_heads
+        self.scaling = self.attention_head_size ** -0.5
+        self.batch_step = batch_step
+
+    def forward(self, query, key, value, attention_mask):
+        if attention_mask is not None:
+            raise NotImplementedError("not implemented yet")
+
+        ret = batch_step_attn_core_func.batch_step_attn_core_func(self.num_attention_heads, self.scaling, self.batch_step, query, key, value)
+
+        return ret, None
