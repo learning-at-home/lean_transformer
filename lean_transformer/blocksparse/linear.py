@@ -3,7 +3,7 @@ This module implements weight matrix sharing for linear layer: full sharing and 
 """
 import math
 from itertools import zip_longest
-from typing import Optional, Tuple, List, Callable
+from typing import Optional, Tuple, List, Callable, Sequence
 
 import torch
 import torch.nn as nn
@@ -22,12 +22,6 @@ except Exception as e:
 
 class GeneralizedMatrix(nn.Module):
     """A module that stores a shared pytorch tensor for use in GeneralizedLinear layers"""
-    layout: Optional[torch.BoolTensor] = None
-    forward_indices: Optional[torch.IntTensor] = None
-    backward_indices: Optional[torch.LongTensor] = None
-    triton_matmul_op: Optional[Callable] = None
-    lowrank_first: Optional[nn.Parameter] = None
-    lowrank_second: Optional[nn.Parameter] = None
 
     def __init__(
             self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None, lowrank_dim: int = 0,
@@ -42,23 +36,25 @@ class GeneralizedMatrix(nn.Module):
             self.weight = nn.Parameter(torch.empty(out_features, in_features))
             nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
             # note: this is usually overwritten by the model-wide initialization
+            self.layout = self.forward_indices = self.backward_indices = None
         else:
             # block-sparse weights with additive butterfly pattern
             layout = get_blocksparse_layout(out_features, in_features, blocksparse_layout)
             assert out_features / layout.shape[0] == in_features / layout.shape[1] == in_features // layout.shape[1]
             block_size = in_features // layout.shape[1]
-            forward_indices, backward_indices = get_indices_from_layout(layout)
             self.register_buffer("layout", layout, persistent=True)
 
             if use_triton:
                 assert not isinstance(triton, Exception), f"triton is not available: {triton}"
                 self.weight = nn.Parameter(torch.empty(1, self.layout.sum().item(), block_size, block_size))
+                self.forward_indices = self.backward_indices = None
             else:
                 # native backend
-                active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
-                self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
+                forward_indices, backward_indices = get_indices_from_layout(layout)
                 self.register_buffer("forward_indices", forward_indices, persistent=True)
                 self.register_buffer("backward_indices", backward_indices, persistent=True)
+                active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
+                self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
 
             torch.nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
             # note: this init is usually overwritten by the model-wide init
@@ -68,6 +64,8 @@ class GeneralizedMatrix(nn.Module):
             self.lowrank_second = nn.Parameter(torch.zeros(self.out_features, lowrank_dim))
             nn.init.normal_(self.lowrank_first, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
             nn.init.normal_(self.lowrank_second, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
+        else:
+            self.lowrank_first = self.lowrank_second = None
 
     @property
     def shape(self):
@@ -156,24 +154,20 @@ class GeneralizedLinear(nn.Linear):
 class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_fwd
-    def forward(ctx,
-                input: torch.Tensor,
-                main_weight: torch.Tensor,
-                bias: Optional[torch.Tensor],
-                lowrank_first: Optional[torch.Tensor],
-                lowrank_second: Optional[torch.Tensor],
-                layout: Optional[torch.Tensor],
-                forward_indices: Optional[torch.Tensor],
-                backward_indices: Optional[torch.Tensor],
-                ):
-
-        output, *tensors_to_save = _GeneralizedLinear._forward_scripted_part(input, main_weight)
+    def forward(ctx, *args):
+        output, tensors_to_save = _GeneralizedLinear.forward_functional(*args)
         ctx.save_for_backward(*tensors_to_save)
         return output
 
     @staticmethod
+    def forward_functional(*args):
+        """pure functional interface for use in other autograd functions"""
+        output, *tensors_to_save = _GeneralizedLinear._forward_jit(*args)
+        return output, tensors_to_save
+
+    @staticmethod
     @maybe_script
-    def _forward_scripted_part(
+    def _forward_jit(
         input: torch.Tensor,
         main_weight: torch.Tensor,
         bias: Optional[torch.Tensor],
@@ -204,14 +198,21 @@ class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output: torch.Tensor):
-        grads = _GeneralizedLinear._backward_impl(
-            grad_output, *ctx.saved_tensors, needs_input_grad=ctx.needs_input_grad
+        return _GeneralizedLinear.backward_functional(grad_output, ctx.saved_tensors, ctx.needs_input_grad)
+
+    @staticmethod
+    def backward_functional(
+            grad_output: torch.Tensor, saved_tensors: Sequence[torch.Tensor], needs_input_grad: Sequence[int]
+            ) -> Sequence[Optional[torch.Tensor]]:
+        """pure functional interface for use in other autograd functions"""
+        grads = _GeneralizedLinear._backward_jit(
+            grad_output, *saved_tensors, needs_input_grad=needs_input_grad
         )
-        return tuple(grad if needed else None for grad, needed in zip_longest(grads, ctx.needs_input_grad))
+        return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod
     @maybe_script
-    def _backward_impl(grad_output: torch.Tensor,
+    def _backward_jit(grad_output: torch.Tensor,
                        input: torch.Tensor,
                        lowrank_hid: Optional[torch.Tensor],
                        main_weight: torch.Tensor,
