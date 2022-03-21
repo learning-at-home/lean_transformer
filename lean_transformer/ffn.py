@@ -175,12 +175,14 @@ class _LeanFFN(torch.autograd.Function):
 
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
 
+        raise NotImplementedError("do NOT use forward_impl")
         pre_activation, *i2h_tensors = _GeneralizedLinear._forward_impl(
             input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second, i2h_forward_indices, i2h_backward_indices
         )
 
         hid_act = _LeanFFN._apply_activation(pre_activation, ctx._activation, ctx._gated)
 
+        raise NotImplementedError("do NOT use forward_impl")
         out, *h2o_tensors = _GeneralizedLinear._forward_impl(
             hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second, h2o_forward_indices, h2o_backward_indices
         )
@@ -210,6 +212,7 @@ class _LeanFFN(torch.autograd.Function):
     def _h2o_backward(ctx, grad_output: torch.Tensor, hid_act: torch.Tensor):
         h2o_tensors = ctx.saved_tensors[-ctx._num_h2o_tensors + 1 :]
         needs_input_grad = [hid_act.requires_grad, *ctx.needs_input_grad[9:15]]
+        raise NotImplementedError("do NOT use backward_impl")
         grads = _GeneralizedLinear._backward_impl(grad_output, hid_act, *h2o_tensors, needs_input_grad=needs_input_grad)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
@@ -217,6 +220,7 @@ class _LeanFFN(torch.autograd.Function):
     def _i2h_backward(ctx, grad_output: torch.Tensor, input_ln: torch.Tensor):
         i2h_tensors = ctx.saved_tensors[-ctx._num_i2h_tensors - ctx._num_h2o_tensors + 2 : -ctx._num_h2o_tensors + 1]
         needs_input_grad = [input_ln.requires_grad, *ctx.needs_input_grad[3:9]]
+        raise NotImplementedError("do NOT use backward_impl")
         grads = _GeneralizedLinear._backward_impl(grad_output, input_ln, *i2h_tensors, needs_input_grad=needs_input_grad)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 

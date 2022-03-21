@@ -3,7 +3,7 @@ This module implements weight matrix sharing for linear layer: full sharing and 
 """
 import math
 from itertools import zip_longest
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Callable
 
 import torch
 import torch.nn as nn
@@ -14,22 +14,34 @@ from lean_transformer.blocksparse.layout import get_blocksparse_layout, get_indi
 from lean_transformer.blocksparse.native_backend import blocksparse_matmul, blocksparse_matmul_backward
 from lean_transformer.utils import maybe_script
 
+try:
+    import triton.ops
+except Exception as e:
+    triton = e
+
 
 class GeneralizedMatrix(nn.Module):
     """A module that stores a shared pytorch tensor for use in GeneralizedLinear layers"""
+    layout: Optional[torch.BoolTensor] = None
+    forward_indices: Optional[torch.IntTensor] = None
+    backward_indices: Optional[torch.LongTensor] = None
+    triton_matmul_op: Optional[Callable] = None
+    lowrank_first: Optional[nn.Parameter] = None
+    lowrank_second: Optional[nn.Parameter] = None
 
     def __init__(
-            self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None, lowrank_dim: int = 0
+            self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None, lowrank_dim: int = 0,
+            use_triton: bool = False
     ):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
 
         if blocksparse_layout is None:
+            assert not use_triton, "triton is only used for block-sparse matrices"
             # fully-connected weight matrix
             self.weight = nn.Parameter(torch.empty(out_features, in_features))
             nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
             # note: this is usually overwritten by the model-wide initialization
-            self.forward_indices = self.backward_indices = None
         else:
             # block-sparse weights with additive butterfly pattern
             layout = get_blocksparse_layout(out_features, in_features, blocksparse_layout)
@@ -37,24 +49,29 @@ class GeneralizedMatrix(nn.Module):
             block_size = in_features // layout.shape[1]
             forward_indices, backward_indices = get_indices_from_layout(layout)
             self.register_buffer("layout", layout, persistent=True)
-            self.register_buffer("forward_indices", forward_indices, persistent=True)
-            self.register_buffer("backward_indices", backward_indices, persistent=True)
-            active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
-            self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
-            torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-            # note: this is usually overwritten by the model-wide init
+
+            if use_triton:
+                assert not isinstance(triton, Exception), f"triton is not available: {triton}"
+                self.weight = nn.Parameter(torch.empty(1, self.layout.sum().item(), block_size, block_size))
+            else:
+                # native backend
+                active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
+                self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
+                self.register_buffer("forward_indices", forward_indices, persistent=True)
+                self.register_buffer("backward_indices", backward_indices, persistent=True)
+
+            torch.nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
+            # note: this init is usually overwritten by the model-wide init
 
         if lowrank_dim:
             self.lowrank_first = nn.Parameter(torch.zeros(lowrank_dim, self.in_features))
             self.lowrank_second = nn.Parameter(torch.zeros(self.out_features, lowrank_dim))
             nn.init.normal_(self.lowrank_first, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
             nn.init.normal_(self.lowrank_second, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
-        else:
-            self.lowrank_first = self.lowrank_second = None
 
     @property
     def shape(self):
-        return (self.out_features, self.in_features)
+        return self.out_features, self.in_features
 
     def __repr__(self):
         return f"{self.__class__.__name__}{tuple(self.shape)}"
@@ -65,12 +82,28 @@ class GeneralizedMatrix(nn.Module):
 
         :param ignore_lowrank: if True, the low-rank components (lowrank_dim) will not be used in matrix multiplication
         """
-        if self.forward_indices is not None:
-            output = blocksparse_matmul(input, self.weight, self.forward_indices)
+        if self.layout is not None:
+            if self.forward_indices is not None:
+                output = blocksparse_matmul(input, self.weight, self.forward_indices)
+            else:
+                output = self._triton_matmul(input, self.weight, self.layout)
         else:
+            # dense weight
             output = F.linear(input, self.weight)
+
         if self.lowrank_first is not None and not ignore_lowrank:
             output = F.linear(F.linear(input, self.lowrank_first), self.lowrank_second, output)
+        return output
+
+    def _triton_matmul(
+            self, input: torch.FloatTensor, weight: torch.FloatTensor, layout: torch.BoolTensor) -> torch.FloatTensor:
+        if self.triton_matmul_op is None:
+            self.triton_matmul_op = triton.ops.blocksparse.matmul(
+                self.layout.cpu(), self.weight.shape[-1], 'dds', trans_a=False, trans_b=True)
+        input_flat = input.flatten(0, -2)
+        input_padded = pad_to_multiple(input_flat, multiple=self.weight.shape[-1], dims=0)
+        output_flat = self.triton_matmul_op(input_padded[None, None, ...], self.weight).flatten(0, -2)
+        output = output_flat[:input_flat.shape[0]].view(input.shape[:-1], output_flat.shape[-1])
         return output
 
 
@@ -123,14 +156,24 @@ class GeneralizedLinear(nn.Linear):
 class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_fwd
-    def forward(ctx, *args):
-        output, *tensors_to_save = _GeneralizedLinear._forward_impl(*args)
+    def forward(ctx,
+                input: torch.Tensor,
+                main_weight: torch.Tensor,
+                bias: Optional[torch.Tensor],
+                lowrank_first: Optional[torch.Tensor],
+                lowrank_second: Optional[torch.Tensor],
+                layout: Optional[torch.Tensor],
+                forward_indices: Optional[torch.Tensor],
+                backward_indices: Optional[torch.Tensor],
+                ):
+
+        output, *tensors_to_save = _GeneralizedLinear._forward_scripted_part(input, main_weight)
         ctx.save_for_backward(*tensors_to_save)
         return output
 
     @staticmethod
     @maybe_script
-    def _forward_impl(
+    def _forward_scripted_part(
         input: torch.Tensor,
         main_weight: torch.Tensor,
         bias: Optional[torch.Tensor],
