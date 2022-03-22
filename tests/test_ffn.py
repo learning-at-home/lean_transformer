@@ -16,16 +16,16 @@ class SimpleFFN(nn.Module):
         self, hidden_size: int, intermediate_size: int, activation=GELU, layer_norm_eps=1e-12, dropout: float = 0.0
     ):
         super().__init__()
-        self.dense_i2h = nn.Linear(hidden_size, intermediate_size)
-        self.dense_h2o = nn.Linear(intermediate_size, hidden_size)
-        self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.i2h_proj = nn.Linear(hidden_size, intermediate_size)
+        self.h2o_proj = nn.Linear(intermediate_size, hidden_size)
+        self.pre_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.activation = activation
         self.dropout = dropout
 
     def forward(self, input):
-        output = self.dense_i2h(self.layer_norm(input))
+        output = self.i2h_proj(self.pre_layer_norm(input))
         output = self.activation(output)
-        output = self.dense_h2o(output)
+        output = self.h2o_proj(output)
         output = F.dropout(output, self.dropout)
         return output + input
 
@@ -103,19 +103,19 @@ class ReferenceFFN(nn.Module):
         gated: bool = False,
         layer_norm_eps: float = 1e-12,
         dropout: float = 0.0,
-        sandwich_norm: bool = False,
-        dense_i2h: Optional[nn.Linear] = None,
-        dense_h2o: Optional[nn.Linear] = None,
+        post_layer_norm: bool = False,
+        i2h_proj: Optional[nn.Linear] = None,
+        h2o_proj: Optional[nn.Linear] = None,
         residual: bool = True,
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
-        self.dense_i2h = nn.Linear(hidden_size, i2h_out_features) if dense_i2h is None else dense_i2h
-        self.dense_h2o = nn.Linear(intermediate_size, hidden_size) if dense_h2o is None else dense_h2o
-        assert self.dense_i2h.in_features == self.dense_h2o.out_features == hidden_size
-        assert self.dense_i2h.out_features == i2h_out_features and self.dense_h2o.in_features == intermediate_size
-        self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
-        self.sandwich_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if sandwich_norm else None
+        self.i2h_proj = nn.Linear(hidden_size, i2h_out_features) if i2h_proj is None else i2h_proj
+        self.h2o_proj = nn.Linear(intermediate_size, hidden_size) if h2o_proj is None else h2o_proj
+        assert self.i2h_proj.in_features == self.h2o_proj.out_features == hidden_size
+        assert self.i2h_proj.out_features == i2h_out_features and self.h2o_proj.in_features == intermediate_size
+        self.pre_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.post_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if post_layer_norm else None
         self.activation = activation
         self.dropout = dropout
         self.residual = residual
@@ -123,14 +123,14 @@ class ReferenceFFN(nn.Module):
     def forward(self, input: torch.Tensor):
         input_2d = input.view(-1, input.shape[-1])
         input_ln = F.layer_norm(
-            input_2d, input.shape[-1:], self.layer_norm.weight, self.layer_norm.bias, self.layer_norm.eps
+            input_2d, input.shape[-1:], self.pre_layer_norm.weight, self.pre_layer_norm.bias, self.pre_layer_norm.eps
         )
-        pre_activation = self.dense_i2h(input_ln)
-        hid_act = self._apply_activation(pre_activation, self.activation, self.dense_h2o.in_features)
+        pre_activation = self.i2h_proj(input_ln)
+        hid_act = self._apply_activation(pre_activation, self.activation, self.h2o_proj.in_features)
 
-        out = self.dense_h2o(hid_act)
-        if self.sandwich_norm:
-            out = self.sandwich_norm(out)
+        out = self.h2o_proj(hid_act)
+        if self.post_layer_norm:
+            out = self.post_layer_norm(out)
         out = F.dropout(out, self.dropout, self.training)
         if self.residual:
             out = out + input_2d
@@ -177,24 +177,24 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         dim,
         4 * dim,
         gated=True,
-        sandwich_norm=True,
-        dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, layout, lowrank_dim), adapter_dim),
-        dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, layout, lowrank_dim), adapter_dim),
+        post_layer_norm=True,
+        i2h_proj=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, layout, lowrank_dim), adapter_dim),
+        h2o_proj=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, layout, lowrank_dim), adapter_dim),
         residual=residual,
     )
     our_ffn = LeanFFN(
         dim,
         4 * dim,
         gated=True,
-        sandwich_norm=True,
-        dense_i2h=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, layout, lowrank_dim), adapter_dim),
-        dense_h2o=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, layout, lowrank_dim), adapter_dim),
+        post_layer_norm=True,
+        i2h_proj=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, layout, lowrank_dim), adapter_dim),
+        h2o_proj=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, layout, lowrank_dim), adapter_dim),
         residual=residual,
         custom_grad=custom_grad,
     )
     with torch.no_grad():
-        baseline_ffn.sandwich_norm.bias[...] = torch.randn_like(baseline_ffn.sandwich_norm.bias)
-        baseline_ffn.sandwich_norm.weight[...] = torch.rand_like(baseline_ffn.sandwich_norm.weight) + 0.5
+        baseline_ffn.post_layer_norm.bias[...] = torch.randn_like(baseline_ffn.post_layer_norm.bias)
+        baseline_ffn.post_layer_norm.weight[...] = torch.rand_like(baseline_ffn.post_layer_norm.weight) + 0.5
 
     assert our_ffn.load_state_dict(baseline_ffn.state_dict())
 
@@ -251,7 +251,7 @@ def test_ffn_dropout():
     num_layers = 4
 
     for dropout in (0.0, 0.5):
-        our_ffn = LeanFFN(dim, 4 * dim, sandwich_norm=True, gated=True, dropout=dropout)
+        our_ffn = LeanFFN(dim, 4 * dim, post_layer_norm=True, gated=True, dropout=dropout)
         x = torch.rand(batch_size, seq_len, dim, device="cpu", requires_grad=True)
 
         out = x

@@ -14,7 +14,7 @@ def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
     """
     tests the correctness model outputs, loss and gradients for a small GPT model with all the features:
     - rotary embeddings
-    - sandwich norm
+    - sandwich norm (pre + post layernorm)
     - parameter sharing with adapters
     - pixelated butterfly
     - reversible stem
@@ -52,13 +52,27 @@ def convert_from_legacy(test_data: dict):
     config = json.loads(test_data['config'])
     if 'block_size' in config:
         config['blocksparse_layout'] = f"pixelfly(block_size={config.pop('block_size')})"
+    config["post_layer_norm"] = config.pop("sandwich_norm", False)
     config.update(out_proj_bias=True, tie_embedding_hidden_mapping=True)
     test_data['config'] = json.dumps(config)
 
     # add layout parameter
+    def update_names(d):
+        d = {name.replace(".shared_matrix.", ".matrix."): x for name, x in d.items()}
+        d = {name.replace(".dense_qkv", ".qkv_proj"): x for name, x in d.items()}
+        d = {name.replace(".dense_out", ".out_proj"): x for name, x in d.items()}
+        d = {name.replace(".dense_i2h", ".i2h_proj"): x for name, x in d.items()}
+        d = {name.replace(".dense_h2o", ".h2o_proj"): x for name, x in d.items()}
+        d = {name.replace("attention.layer_norm", "attention.pre_layer_norm"): x for name, x in d.items()}
+        d = {name.replace("ffn.layer_norm", "ffn.pre_layer_norm"): x for name, x in d.items()}
+        d = {name.replace(".sandwich_norm", ".post_layer_norm"): x for name, x in d.items()}
+        return d
+
+    test_data["state"] = update_names(test_data["state"])
+    test_data["grads"] = update_names(test_data["grads"])
+
     for name, param in LeanGPTModel(LeanGPTConfig(**config)).state_dict().items():
         if name.endswith('.layout'):
-            print('A!', name)
             assert name not in test_data["state"]
             test_data["state"][name] = param
         else:

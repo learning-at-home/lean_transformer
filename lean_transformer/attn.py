@@ -15,9 +15,9 @@ class LeanSelfAttention(nn.Module):
         num_attention_heads: int,
         dropout: float = 0,
         layer_norm_eps: float = 1e-12,
-        sandwich_norm: bool = False,
-        dense_qkv: Optional[nn.Linear] = None,
-        dense_out: Optional[nn.Linear] = None,
+        post_layer_norm: bool = False,
+        qkv_proj: Optional[nn.Linear] = None,
+        out_proj: Optional[nn.Linear] = None,
         residual: bool = True,
         attention_core: Optional[nn.Module] = None,
         checkpoint_attention_core: bool = True,
@@ -35,14 +35,14 @@ class LeanSelfAttention(nn.Module):
         :param num_attention_heads: number of heads, as defined in the original transformer
         :param dropout: hidden dropout probability, applied to the output projection (before adding residual)
         :param layer_norm_eps: see torch.nn.functional.layer_norm
-        :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
+        :param post_layer_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
            as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
            more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
         :param residual: if True, adds the original layer input to the final layer output
         :param attention_core: optionally provide custom attention function. See SimpleAttentionCore for inspiration.
         :param checkpoint_attention_core: re-compute attention weights during backward pass instead of storing them
-        :param dense_qkv: custom QKV projection layer (hidden_size -> 3 * hidden_size)
-        :param dense_out: custom output projection layer (hidden_size -> hidden_size)
+        :param qkv_proj: custom QKV projection layer (hidden_size -> 3 * hidden_size)
+        :param out_proj: custom output projection layer (hidden_size -> hidden_size)
         :param kwargs: additional kwargs are passed to the chosen attention core
         """
         super().__init__()
@@ -53,26 +53,26 @@ class LeanSelfAttention(nn.Module):
 
         self.hidden_size = hidden_size
         self.attention_core = attention_core
-        self.dense_qkv = nn.Linear(hidden_size, hidden_size * 3) if dense_qkv is None else dense_qkv
-        self.dense_out = nn.Linear(hidden_size, hidden_size) if dense_out is None else dense_out
-        assert self.dense_qkv.in_features == self.dense_out.in_features == self.dense_out.out_features == hidden_size
-        assert self.dense_qkv.out_features == hidden_size * 3
+        self.qkv_proj = nn.Linear(hidden_size, hidden_size * 3) if qkv_proj is None else qkv_proj
+        self.out_proj = nn.Linear(hidden_size, hidden_size) if out_proj is None else out_proj
+        assert self.qkv_proj.in_features == self.out_proj.in_features == self.out_proj.out_features == hidden_size
+        assert self.qkv_proj.out_features == hidden_size * 3
 
-        self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
-        self.sandwich_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if sandwich_norm else None
+        self.pre_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.post_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if post_layer_norm else None
         self.output_dropout = nn.Dropout(dropout, inplace=False)
         self.residual, self.checkpoint_attention_core = residual, checkpoint_attention_core
 
     def forward(self, hidden_states, attention_mask=None, output_attentions=False):
-        hidden_states_ln = self.layer_norm(hidden_states)
-        qkv_output = self.dense_qkv(hidden_states_ln)
+        hidden_states_ln = self.pre_layer_norm(hidden_states)
+        qkv_output = self.qkv_proj(hidden_states_ln)
         query, key, value = qkv_output.split(self.hidden_size, dim=qkv_output.ndim - 1)
         attention_output, attention_probs = self._maybe_checkpoint(
             self.attention_core, query, key, value, attention_mask
         )
-        outputs = self.dense_out(attention_output)
-        if self.sandwich_norm:
-            outputs = self.sandwich_norm(outputs)
+        outputs = self.out_proj(attention_output)
+        if self.post_layer_norm:
+            outputs = self.post_layer_norm(outputs)
         outputs = self.output_dropout(outputs)
         if self.residual:
             outputs = outputs + hidden_states.to(torch.float32, copy=False)

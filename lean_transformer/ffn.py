@@ -21,15 +21,15 @@ class LeanFFN(nn.Module):
     :param gated: use gated activations based on https://arxiv.org/abs/2002.05202 and https://arxiv.org/abs/2102.11972
       note: gated activations require 1.5x more parameters compared to their non-gated variants.
     :param layer_norm_eps: see torch.nn.functional.layer_norm
-    :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
+    :param post_layer_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
        as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
        more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
     :param dropout: hidden dropout probability, applied to the output projection (before adding residual)
     :param residual: if True, adds the original layer input to the final layer output
     :param custom_grad: if True (default), use custom backprop code that saves memory at the cost of ~5% extra compute
 
-    :param dense_i2h: custom *first* linear layer (hidden_size -> intermediate_size or 2x indermediate_size)
-    :param dense_h2o: custom *second* linear layer (intermediate_size -> hidden_size)
+    :param i2h_proj: custom *first* linear layer (hidden_size -> intermediate_size or 2x indermediate_size)
+    :param h2o_proj: custom *second* linear layer (intermediate_size -> hidden_size)
     """
 
     def __init__(
@@ -40,23 +40,23 @@ class LeanFFN(nn.Module):
         gated: bool = False,
         layer_norm_eps: float = 1e-12,
         dropout: float = 0.0,
-        sandwich_norm: bool = False,
-        dense_i2h: Optional[nn.Linear] = None,
-        dense_h2o: Optional[nn.Linear] = None,
+        post_layer_norm: bool = False,
+        i2h_proj: Optional[nn.Linear] = None,
+        h2o_proj: Optional[nn.Linear] = None,
         residual: bool = True,
         custom_grad: bool = True,
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
-        self.dense_i2h = nn.Linear(hidden_size, i2h_out_features) if dense_i2h is None else dense_i2h
-        self.dense_h2o = nn.Linear(intermediate_size, hidden_size) if dense_h2o is None else dense_h2o
+        self.i2h_proj = nn.Linear(hidden_size, i2h_out_features) if i2h_proj is None else i2h_proj
+        self.h2o_proj = nn.Linear(intermediate_size, hidden_size) if h2o_proj is None else h2o_proj
         if custom_grad:
-            assert type(self.dense_i2h) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
-            assert type(self.dense_h2o) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
-        assert self.dense_i2h.in_features == self.dense_h2o.out_features == hidden_size
-        assert self.dense_i2h.out_features == i2h_out_features and self.dense_h2o.in_features == intermediate_size
-        self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
-        self.sandwich_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if sandwich_norm else None
+            assert type(self.i2h_proj) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
+            assert type(self.h2o_proj) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
+        assert self.i2h_proj.in_features == self.h2o_proj.out_features == hidden_size
+        assert self.i2h_proj.out_features == i2h_out_features and self.h2o_proj.in_features == intermediate_size
+        self.pre_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.post_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if post_layer_norm else None
         self.activation = activation
         self.gated = gated
         self.dropout = dropout
@@ -69,14 +69,14 @@ class LeanFFN(nn.Module):
     def _forward_pytorch(self, input):
         input_2d = input.view(-1, input.shape[-1])
         input_ln = F.layer_norm(
-            input_2d, input.shape[-1:], self.layer_norm.weight, self.layer_norm.bias, self.layer_norm.eps
+            input_2d, input.shape[-1:], self.pre_layer_norm.weight, self.pre_layer_norm.bias, self.pre_layer_norm.eps
         )
-        pre_activation = self.dense_i2h(input_ln)
+        pre_activation = self.i2h_proj(input_ln)
         hid_act = _LeanFFN._apply_activation(pre_activation, self.activation, gated=self.gated)
 
-        out = self.dense_h2o(hid_act)
-        if self.sandwich_norm:
-            out = self.sandwich_norm(out)
+        out = self.h2o_proj(hid_act)
+        if self.post_layer_norm:
+            out = self.post_layer_norm(out)
 
         if self.dropout and self.training:
             out = torch.dropout(out, self.dropout, self.training)
@@ -85,43 +85,43 @@ class LeanFFN(nn.Module):
         return out.view(*input.shape)
 
     def _forward_custom(self, input):
-        sandwich_ln_weight = sandwich_ln_bias = None
-        if self.sandwich_norm is not None:
-            sandwich_ln_weight, sandwich_ln_bias = self.sandwich_norm.weight, self.sandwich_norm.bias
+        post_ln_weight = post_ln_bias = None
+        if self.post_layer_norm is not None:
+            post_ln_weight, post_ln_bias = self.post_layer_norm.weight, self.post_layer_norm.bias
         i2h_lowrank_first = i2h_lowrank_second = h2o_lowrank_first = h2o_lowrank_second = None
         i2h_forward_indices = i2h_backward_indices = h2o_forward_indices = h2o_backward_indices = None
-        if isinstance(self.dense_i2h, GeneralizedLinear):
-            i2h_lowrank_first, i2h_lowrank_second = self.dense_i2h.get_combined_lowrank_components()
-            i2h_forward_indices = self.dense_i2h.matrix.forward_indices
-            i2h_backward_indices = self.dense_i2h.matrix.backward_indices
-        if isinstance(self.dense_h2o, GeneralizedLinear):
-            h2o_lowrank_first, h2o_lowrank_second = self.dense_h2o.get_combined_lowrank_components()
-            h2o_forward_indices = self.dense_h2o.matrix.forward_indices
-            h2o_backward_indices = self.dense_h2o.matrix.backward_indices
+        if isinstance(self.i2h_proj, GeneralizedLinear):
+            i2h_lowrank_first, i2h_lowrank_second = self.i2h_proj.get_combined_lowrank_components()
+            i2h_forward_indices = self.i2h_proj.matrix.forward_indices
+            i2h_backward_indices = self.i2h_proj.matrix.backward_indices
+        if isinstance(self.h2o_proj, GeneralizedLinear):
+            h2o_lowrank_first, h2o_lowrank_second = self.h2o_proj.get_combined_lowrank_components()
+            h2o_forward_indices = self.h2o_proj.matrix.forward_indices
+            h2o_backward_indices = self.h2o_proj.matrix.backward_indices
 
         output = _LeanFFN.apply(
             input,
-            self.layer_norm.weight,
-            self.layer_norm.bias,
-            self.dense_i2h.weight,
-            self.dense_i2h.bias,
+            self.pre_layer_norm.weight,
+            self.pre_layer_norm.bias,
+            self.i2h_proj.weight,
+            self.i2h_proj.bias,
             i2h_lowrank_first,
             i2h_lowrank_second,
             i2h_forward_indices,
             i2h_backward_indices,
-            self.dense_h2o.weight,
-            self.dense_h2o.bias,
+            self.h2o_proj.weight,
+            self.h2o_proj.bias,
             h2o_lowrank_first,
             h2o_lowrank_second,
             h2o_forward_indices,
             h2o_backward_indices,
-            sandwich_ln_weight,
-            sandwich_ln_bias,
+            post_ln_weight,
+            post_ln_bias,
             self.activation,
             self.gated,
             self.dropout,
             self.training,
-            self.layer_norm.eps,
+            self.pre_layer_norm.eps,
             self.residual,
         )
         return output
@@ -157,8 +157,8 @@ class _LeanFFN(torch.autograd.Function):
         h2o_lowrank_second: Optional[torch.Tensor],
         h2o_forward_indices: Optional[torch.IntTensor],
         h2o_backward_indices: Optional[torch.IntTensor],
-        sandwich_ln_weight: Optional[torch.Tensor],
-        sandwich_ln_bias: Optional[torch.Tensor],
+        post_ln_weight: Optional[torch.Tensor],
+        post_ln_bias: Optional[torch.Tensor],
         activation: callable,
         gated: bool,
         dropout: float,
@@ -168,9 +168,9 @@ class _LeanFFN(torch.autograd.Function):
     ):
         ctx._dropout, ctx._training, ctx._ln_eps = dropout, training, ln_eps
         ctx._activation, ctx._gated, ctx._residual = activation, gated, residual
-        ctx._use_sandwich = sandwich_ln_weight is not None
+        ctx._use_post_ln = post_ln_weight is not None
 
-        dropout_rng, pre_sandwich = None, None  # optional tensors to save
+        dropout_rng, post_ln_input = None, None  # optional tensors to save
         input_2d = input.view(-1, input.shape[-1])
 
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
@@ -185,9 +185,9 @@ class _LeanFFN(torch.autograd.Function):
             hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second, h2o_forward_indices, h2o_backward_indices
         )
 
-        if ctx._use_sandwich:
-            pre_sandwich = out
-            out = F.layer_norm(pre_sandwich, pre_sandwich.shape[-1:], sandwich_ln_weight, sandwich_ln_bias, eps=ln_eps)
+        if ctx._use_post_ln:
+            post_ln_input = out
+            out = F.layer_norm(post_ln_input, post_ln_input.shape[-1:], post_ln_weight, post_ln_bias, eps=ln_eps)
 
         if training and dropout:
             dropout_rng = _LeanFFN._get_device_state(out)
@@ -198,7 +198,7 @@ class _LeanFFN(torch.autograd.Function):
 
         assert i2h_tensors[0] is input_ln and h2o_tensors[0] is hid_act  # we can rematerialize these tensors
         tensors_to_save = [
-            input, pre_activation, ln_weight, ln_bias, pre_sandwich, sandwich_ln_weight, sandwich_ln_bias, dropout_rng
+            input, pre_activation, ln_weight, ln_bias, post_ln_input, post_ln_weight, post_ln_bias, dropout_rng
         ]
         tensors_to_save.extend((*i2h_tensors[1:], *h2o_tensors[1:]))
         ctx.save_for_backward(*tensors_to_save)
@@ -223,32 +223,32 @@ class _LeanFFN(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output):
-        grad_input = grad_ln_weight = grad_ln_bias = grad_sandwich_ln_weight = grad_sandwich_ln_bias = None
+        grad_input = grad_ln_weight = grad_ln_bias = grad_post_ln_weight = grad_post_ln_bias = None
         input, pre_activation, ln_weight, ln_bias, = ctx.saved_tensors[:4]
-        pre_sandwich, sandwich_ln_weight, sandwich_ln_bias, dropout_rng = ctx.saved_tensors[4: 8]
+        post_ln_input, post_ln_weight, post_ln_bias, dropout_rng = ctx.saved_tensors[4: 8]
         grad_output_2d = grad_output.view(-1, grad_output.shape[-1])
 
-        # backward(... -> sandwich_norm -> dropout -> residual)
+        # backward(... -> post_norm -> dropout -> residual)
         grad_residual_2d = grad_output_2d if ctx._residual else None
         if dropout_rng is not None:
             _LeanFFN._set_device_state(grad_output_2d, dropout_rng)
             grad_output_2d = torch.dropout(grad_output_2d, ctx._dropout, ctx._training)
 
-        if ctx._use_sandwich:
-            assert pre_sandwich is not None
+        if ctx._use_post_ln:
+            assert post_ln_input is not None
             with torch.enable_grad():
-                required_grad = pre_sandwich.requires_grad
-                pre_sandwich.requires_grad_(True)
-                sandwich_out = F.layer_norm(
-                    pre_sandwich, pre_sandwich.shape[-1:], sandwich_ln_weight, sandwich_ln_bias, eps=ctx._ln_eps
+                required_grad = post_ln_input.requires_grad
+                post_ln_input.requires_grad_(True)
+                post_ln_out = F.layer_norm(
+                    post_ln_input, post_ln_input.shape[-1:], post_ln_weight, post_ln_bias, eps=ctx._ln_eps
                 )
-                grad_output_2d, grad_sandwich_ln_weight, grad_sandwich_ln_bias = torch.autograd.grad(
-                    sandwich_out, [pre_sandwich, sandwich_ln_weight, sandwich_ln_bias], grad_outputs=grad_output_2d
+                grad_output_2d, grad_post_ln_weight, grad_post_ln_bias = torch.autograd.grad(
+                    post_ln_out, [post_ln_input, post_ln_weight, post_ln_bias], grad_outputs=grad_output_2d
                 )
-                pre_sandwich.requires_grad_(required_grad)
-                del pre_sandwich, sandwich_out
+                post_ln_input.requires_grad_(required_grad)
+                del post_ln_input, post_ln_out
 
-        # backward(... -> nonlinearity -> intermediate_layernorm -> linear_h2o -> ...)
+        # backward(... -> nonlinearity -> linear_h2o -> ...)
         input_2d = input.view(-1, input.shape[-1])
         grad_h2o_output_2d = grad_output_2d.view(-1, grad_output.shape[-1])
 
@@ -293,7 +293,7 @@ class _LeanFFN(torch.autograd.Function):
         return (grad_input, grad_ln_weight, grad_ln_bias,
                 grad_i2h_weight, grad_i2h_bias, grad_i2h_lowrank_first, grad_i2h_lowrank_second, None, None,
                 grad_h2o_weight, grad_h2o_bias, grad_h2o_lowrank_first, grad_h2o_lowrank_second, None, None,
-                grad_sandwich_ln_weight, grad_sandwich_ln_bias, None, None, None, None, None, None)
+                grad_post_ln_weight, grad_post_ln_bias, None, None, None, None, None, None)
 
     @staticmethod
     def _get_device_state(x: torch.Tensor):

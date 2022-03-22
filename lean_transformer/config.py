@@ -42,8 +42,8 @@ class LeanTransformerConfig(PretrainedConfig):
       note: gated activations require 1.5x more parameters compared to their non-gated variants.
     :param attn_qkv_bias: whether or not to use biases in attention qkv projection
     :param out_proj_bias: whether or not to use biases in output projections of both attention and ffn,
-      defaults to True unless sandwich_norm is enabled -- since sandwich norm already has a bias component
-    :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
+      defaults to True unless post_layer_norm is enabled -- since post-norm already has a bias component
+    :param post_layer_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
        as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
        more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
 
@@ -80,7 +80,7 @@ class LeanTransformerConfig(PretrainedConfig):
         hidden_act_gated: bool = False,
         attn_qkv_bias: bool = True,
         out_proj_bias: Optional[bool] = None,
-        sandwich_norm: bool = False,
+        post_layer_norm: bool = False,
         reversible: bool = False,
         hidden_dropout_prob: float = 0,
         attention_probs_dropout_prob: float = 0,
@@ -90,6 +90,8 @@ class LeanTransformerConfig(PretrainedConfig):
         initializer_range: Optional[float] = None,
         **kwargs,
     ):
+        if "sandwich_norm" in kwargs:
+            raise ValueError("sandwich_norm was renamed, please use pre_layer_norm=True and post_layer_norm=True")
         if intermediate_size is None:
             intermediate_size = 4 * hidden_size
         super().__init__(**kwargs)
@@ -119,8 +121,8 @@ class LeanTransformerConfig(PretrainedConfig):
         self.hidden_act_gated = hidden_act_gated
         self.layer_norm_eps = layer_norm_eps
         self.attn_qkv_bias = attn_qkv_bias
-        self.out_proj_bias = out_proj_bias if out_proj_bias is not None else not sandwich_norm
-        self.sandwich_norm = sandwich_norm
+        self.out_proj_bias = out_proj_bias if out_proj_bias is not None else not post_layer_norm
+        self.post_layer_norm = post_layer_norm
         self.reversible = reversible
 
         self.attention_type = attention_type

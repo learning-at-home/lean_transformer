@@ -50,11 +50,11 @@ class LeanTransformer(nn.Module):
             attention_core=config.get_attention_core(),
             dropout=config.hidden_dropout_prob,
             layer_norm_eps=config.layer_norm_eps,
-            dense_qkv=config.get_linear_layer(
+            qkv_proj=config.get_linear_layer(
                 "self_attn_qkv", index, config.hidden_size, config.hidden_size * 3, bias=config.attn_qkv_bias),
-            dense_out=config.get_linear_layer(
+            out_proj=config.get_linear_layer(
                 "self_attn_out", index, config.hidden_size, config.hidden_size, bias=config.out_proj_bias),
-            sandwich_norm=config.sandwich_norm,
+            post_layer_norm=config.post_layer_norm,
             residual=not config.reversible, checkpoint_attention_core=not config.reversible
         )
 
@@ -66,11 +66,11 @@ class LeanTransformer(nn.Module):
             gated=config.hidden_act_gated,
             layer_norm_eps=config.layer_norm_eps,
             dropout=config.hidden_dropout_prob,
-            dense_i2h=config.get_linear_layer("ffn_first", index, config.hidden_size,
-                                              config.intermediate_size * (1 + config.hidden_act_gated), bias=True),
-            dense_h2o=config.get_linear_layer("ffn_second", index, config.intermediate_size,
-                                              config.hidden_size, bias=config.out_proj_bias),
-            sandwich_norm=config.sandwich_norm,
+            i2h_proj=config.get_linear_layer("ffn_first", index, config.hidden_size,
+                                             config.intermediate_size * (1 + config.hidden_act_gated), bias=True),
+            h2o_proj=config.get_linear_layer("ffn_second", index, config.intermediate_size,
+                                             config.hidden_size, bias=config.out_proj_bias),
+            post_layer_norm=config.post_layer_norm,
             residual=not config.reversible,
         )
 

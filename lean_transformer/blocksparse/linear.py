@@ -231,13 +231,13 @@ class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @maybe_script
     def _backward_jit(grad_output: torch.Tensor,
-                       input: torch.Tensor,
-                       lowrank_hid: Optional[torch.Tensor],
-                       main_weight: torch.Tensor,
-                       lowrank_first: Optional[torch.Tensor],
-                       lowrank_second: Optional[torch.Tensor],
-                       backward_indices: Optional[torch.Tensor],
-                       needs_input_grad: List[bool]):
+                      input: torch.Tensor,
+                      lowrank_hid: Optional[torch.Tensor],
+                      main_weight: torch.Tensor,
+                      lowrank_first: Optional[torch.Tensor],
+                      lowrank_second: Optional[torch.Tensor],
+                      backward_indices: Optional[torch.Tensor],
+                      needs_input_grad: List[bool]):
         grad_input = grad_input_flat = grad_main_weight = grad_lowrank_first = grad_lowrank_second = grad_bias \
             = grad_output_flat_transposed = grad_lowrank_hid_flat = lowrank_hid_flat = torch.empty(0)
         input_flat = input.flatten(0, -2)  # [etc, in_features]
