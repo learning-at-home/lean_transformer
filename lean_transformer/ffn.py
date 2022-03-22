@@ -92,12 +92,12 @@ class LeanFFN(nn.Module):
         i2h_forward_indices = i2h_backward_indices = h2o_forward_indices = h2o_backward_indices = None
         if isinstance(self.dense_i2h, GeneralizedLinear):
             i2h_lowrank_first, i2h_lowrank_second = self.dense_i2h.get_combined_lowrank_components()
-            i2h_forward_indices = self.dense_i2h.shared_matrix.forward_indices
-            i2h_backward_indices = self.dense_i2h.shared_matrix.backward_indices
+            i2h_forward_indices = self.dense_i2h.matrix.forward_indices
+            i2h_backward_indices = self.dense_i2h.matrix.backward_indices
         if isinstance(self.dense_h2o, GeneralizedLinear):
             h2o_lowrank_first, h2o_lowrank_second = self.dense_h2o.get_combined_lowrank_components()
-            h2o_forward_indices = self.dense_h2o.shared_matrix.forward_indices
-            h2o_backward_indices = self.dense_h2o.shared_matrix.backward_indices
+            h2o_forward_indices = self.dense_h2o.matrix.forward_indices
+            h2o_backward_indices = self.dense_h2o.matrix.backward_indices
 
         output = _LeanFFN.apply(
             input,
@@ -209,14 +209,14 @@ class _LeanFFN(torch.autograd.Function):
     @staticmethod
     def _h2o_backward(ctx, grad_output: torch.Tensor, hid_act: torch.Tensor):
         saved_tensors = (hid_act, *ctx.saved_tensors[-ctx._num_h2o_tensors + 1 :])
-        needs_input_grad = (hid_act.requires_grad, *ctx.needs_input_grad[9:15])
+        needs_input_grad = [hid_act.requires_grad, *ctx.needs_input_grad[9:15]]
         grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod
     def _i2h_backward(ctx, grad_output: torch.Tensor, input_ln: torch.Tensor):
         saved_tensors = (input_ln, *ctx.saved_tensors[-ctx._num_i2h_tensors - ctx._num_h2o_tensors + 2 : -ctx._num_h2o_tensors + 1])
-        needs_input_grad = (input_ln.requires_grad, *ctx.needs_input_grad[3:9])
+        needs_input_grad = [input_ln.requires_grad, *ctx.needs_input_grad[3:9]]
         grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 

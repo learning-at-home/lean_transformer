@@ -12,7 +12,7 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 
 from lean_transformer.blocksparse.layout import get_blocksparse_layout, get_indices_from_layout
 from lean_transformer.blocksparse.native_backend import blocksparse_matmul, blocksparse_matmul_backward
-from lean_transformer.utils import maybe_script
+from lean_transformer.utils import maybe_script, pad_to_multiple
 
 try:
     import triton.ops
@@ -84,7 +84,7 @@ class GeneralizedMatrix(nn.Module):
             if self.forward_indices is not None:
                 output = blocksparse_matmul(input, self.weight, self.forward_indices)
             else:
-                output = self._triton_matmul(input, self.weight, self.layout)
+                output = self._triton_matmul(input)
         else:
             # dense weight
             output = F.linear(input, self.weight)
@@ -93,8 +93,7 @@ class GeneralizedMatrix(nn.Module):
             output = F.linear(F.linear(input, self.lowrank_first), self.lowrank_second, output)
         return output
 
-    def _triton_matmul(
-            self, input: torch.FloatTensor, weight: torch.FloatTensor, layout: torch.BoolTensor) -> torch.FloatTensor:
+    def _triton_matmul(self, input: torch.Tensor) -> torch.FloatTensor:
         if self.triton_matmul_op is None:
             self.triton_matmul_op = triton.ops.blocksparse.matmul(
                 self.layout.cpu(), self.weight.shape[-1], 'dds', trans_a=False, trans_b=True)
@@ -108,10 +107,10 @@ class GeneralizedMatrix(nn.Module):
 class GeneralizedLinear(nn.Linear):
     """A linear layer with a shared full-rank matrix and an individual low-rank adapter"""
 
-    def __init__(self, shared_matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
+    def __init__(self, matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
-        self.shared_matrix = shared_matrix
-        self.out_features, self.in_features = self.shared_matrix.shape
+        self.matrix = matrix
+        self.out_features, self.in_features = self.matrix.shape
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
 
         if adapter_dim != 0:
@@ -125,30 +124,30 @@ class GeneralizedLinear(nn.Linear):
             self.adapter_first = self.adapter_second = None
 
     def get_combined_lowrank_components(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        """Group together low-rank matrix components from this layer's adapter and GeneralizedMatrix for faster matmul"""
-        if self.adapter_first is not None and self.shared_matrix.lowrank_first is None:
+        """Group together low-rank matrices from this layer's adapter and GeneralizedMatrix for faster matmul"""
+        if self.adapter_first is not None and self.matrix.lowrank_first is None:
             return self.adapter_first, self.adapter_second
-        elif self.adapter_first is None and self.shared_matrix.lowrank_first is not None:
-            return self.shared_matrix.lowrank_first, self.shared_matrix.lowrank_second
-        elif self.adapter_first is not None and self.shared_matrix.lowrank_first is not None:
-            combined_first = torch.cat([self.shared_matrix.lowrank_first, self.adapter_first], dim=0)
+        elif self.adapter_first is None and self.matrix.lowrank_first is not None:
+            return self.matrix.lowrank_first, self.matrix.lowrank_second
+        elif self.adapter_first is not None and self.matrix.lowrank_first is not None:
+            combined_first = torch.cat([self.matrix.lowrank_first, self.adapter_first], dim=0)
             # ^-- cat0[(lowrank_dim x input_dim), (adapter_dim, input_dim)] -> (combined_dim, input_dim)
-            combined_second = torch.cat([self.shared_matrix.lowrank_second, self.adapter_second], dim=1)
+            combined_second = torch.cat([self.matrix.lowrank_second, self.adapter_second], dim=1)
             # ^-- cat1[(output_dim x lowrank_dim), (output_dim, adapter_dim)] -> (combined_dim, input_dim)
             return combined_first, combined_second
         else:
             assert self.adapter_first is None and self.adapter_second is None
-            assert self.shared_matrix.lowrank_first is None and self.shared_matrix.lowrank_second is None
+            assert self.matrix.lowrank_first is None and self.matrix.lowrank_second is None
             return None, None
 
     @property
     def weight(self):
-        return self.shared_matrix.weight
+        return self.matrix.weight
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return _GeneralizedLinear.apply(
             input, self.weight, self.bias, *self.get_combined_lowrank_components(),
-            self.shared_matrix.forward_indices, self.shared_matrix.backward_indices)
+            self.matrix.forward_indices, self.matrix.backward_indices)
 
 
 class _GeneralizedLinear(torch.autograd.Function):
@@ -160,9 +159,27 @@ class _GeneralizedLinear(torch.autograd.Function):
         return output
 
     @staticmethod
-    def forward_functional(*args):
+    def forward_functional(input: torch.FloatTensor,
+                           main_weight: torch.FloatTensor,
+                           bias: Optional[torch.Tensor] = None,
+                           lowrank_first: Optional[torch.Tensor] = None,
+                           lowrank_second: Optional[torch.Tensor] = None,
+                           forward_indices: Optional[torch.Tensor] = None,
+                           backward_indices: Optional[torch.Tensor] = None,
+                           matmul_op: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None
+                           ):
         """pure functional interface for use in other autograd functions"""
-        output, *tensors_to_save = _GeneralizedLinear._forward_jit(*args)
+        if matmul_op is None:
+            # matmul using pure pytorch, fused into _forward_jit
+            extra_args = (forward_indices, backward_indices, None)
+        else:
+            # matmul using triton backend (or similar), can't be jit-compiled
+            partial_output = matmul_op(input, main_weight)
+            extra_args = (None, None, partial_output)
+
+        output, *tensors_to_save = _GeneralizedLinear._forward_jit(
+            input, main_weight, bias, lowrank_first, lowrank_second, *extra_args
+        )
         return output, tensors_to_save
 
     @staticmethod
@@ -175,9 +192,12 @@ class _GeneralizedLinear(torch.autograd.Function):
         lowrank_second: Optional[torch.Tensor],
         forward_indices: Optional[torch.Tensor],
         backward_indices: Optional[torch.Tensor],
+        partial_output: Optional[torch.Tensor]
     ):
         input_flat = input.view(-1, input.shape[-1])
-        if forward_indices is not None:
+        if partial_output is not None:
+            output = partial_output  # matmul was pre-computed in forward_functional
+        elif forward_indices is not None:
             output = blocksparse_matmul(input_flat, main_weight, forward_indices)
             if bias is not None:
                 output.add_(bias.to(output.dtype))
@@ -202,12 +222,10 @@ class _GeneralizedLinear(torch.autograd.Function):
 
     @staticmethod
     def backward_functional(
-            grad_output: torch.Tensor, saved_tensors: Sequence[torch.Tensor], needs_input_grad: Sequence[int]
+            grad_output: torch.Tensor, saved_tensors: Sequence[torch.Tensor], needs_input_grad: List[bool]
             ) -> Sequence[Optional[torch.Tensor]]:
         """pure functional interface for use in other autograd functions"""
-        grads = _GeneralizedLinear._backward_jit(
-            grad_output, *saved_tensors, needs_input_grad=needs_input_grad
-        )
+        grads = _GeneralizedLinear._backward_jit(grad_output, *saved_tensors, needs_input_grad=needs_input_grad)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod
