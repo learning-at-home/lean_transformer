@@ -17,7 +17,7 @@ def test_pad_to_multiple():
     assert pad_to_multiple(x, multiple=2, dims=0).shape == (4, 3)
     assert pad_to_multiple(x, multiple=4, dims=1).shape == (3, 4)
     assert pad_to_multiple(x, multiple=2, dims=[0, 1]).shape == (4, 4)
-    assert pad_to_multiple(x, multiple=4, dims=1).sum().item() == x.sum().item()
+    assert torch.allclose(pad_to_multiple(x, multiple=4, dims=1).sum(), x.sum())
     assert pad_to_multiple(x, multiple=10, dims=0)[3:].norm() == 0
     assert pad_to_multiple(x, multiple=4, dims=[0, 1]).shape == (4, 4)
     assert pad_to_multiple(x, multiple=3, dims=[0, 1]) is x
