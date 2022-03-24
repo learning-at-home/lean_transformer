@@ -32,7 +32,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
     :param adapter_dim: if share_large_matrices is used, each layer can make LoRA-like adapters to the shared matrices.
       The adapter_dim corresponds to a hidden dimension of that adapter (see arXiv:2106.09685 for LoRA)
-    :param blocksparse_layout: if specified, replaces weight matrices in FFN and attention with block-sparse matrices,
+    :param weight_layout: if specified, replaces weight matrices in FFN and attention with block-sparse matrices,
       defined by this layout. For instance, "pixelfly(block_size=128)" is Pixelated Buttefly (arXiv:2112.00029 ).
       This does not affect embeddings or attention logits.
     :param lowrank_dim: if specified, add a (shared) low-rank component to the block-sparse matrix, as recommended
@@ -74,7 +74,7 @@ class LeanTransformerConfig(PretrainedConfig):
         adapter_dim: int = 0,
         num_attention_heads: int = 64,
         intermediate_size: Optional[int] = None,
-        blocksparse_layout: Optional[str] = None,
+        weight_layout: Optional[str] = None,
         lowrank_dim: int = 0,
         hidden_act: str = "gelu_fused",
         hidden_act_gated: bool = False,
@@ -92,6 +92,8 @@ class LeanTransformerConfig(PretrainedConfig):
     ):
         if "sandwich_norm" in kwargs:
             raise ValueError("sandwich_norm was renamed, please use pre_layer_norm=True and post_layer_norm=True")
+        if "block_size" in kwargs:
+            raise ValueError("block_size was renamed, use weight_layout='pixelfly(block_size=128)'")
         if intermediate_size is None:
             intermediate_size = 4 * hidden_size
         super().__init__(**kwargs)
@@ -99,7 +101,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.intermediate_size = intermediate_size
         self.adapter_dim = adapter_dim
         self.lowrank_dim = lowrank_dim
-        self.blocksparse_layout = blocksparse_layout
+        self.weight_layout = weight_layout
 
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
@@ -188,15 +190,15 @@ class LeanTransformerConfig(PretrainedConfig):
         """
         assert 0 <= index <= self.total_shared_matrix_sets
         if key == "self_attn_qkv":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.blocksparse_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.weight_layout, self.lowrank_dim)
         if key == "self_attn_out":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.blocksparse_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.weight_layout, self.lowrank_dim)
         if key == "ffn_first":
             ffn_hidden_including_gate = self.intermediate_size * (2 if self.hidden_act_gated else 1)
             return GeneralizedMatrix(
-                self.hidden_size, ffn_hidden_including_gate, self.blocksparse_layout, self.lowrank_dim)
+                self.hidden_size, ffn_hidden_including_gate, self.weight_layout, self.lowrank_dim)
         if key == "ffn_second":
-            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.blocksparse_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.weight_layout, self.lowrank_dim)
 
         raise NotImplementedError(f"Unexpected matrix key: {key}")
 

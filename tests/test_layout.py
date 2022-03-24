@@ -21,7 +21,7 @@ def test_blocksparse_layout(layout: str, reference_sparsity: float):
         return layout
 
     config = LeanAlbertConfig(vocab_size=1000, num_hidden_layers=4, hidden_size=32, num_attention_heads=4,
-                              blocksparse_layout=layout)
+                              weight_layout=layout)
     model = LeanAlbertForPreTraining(config)
 
     batch = dict(
