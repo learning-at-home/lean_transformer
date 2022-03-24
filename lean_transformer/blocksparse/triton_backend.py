@@ -24,7 +24,7 @@ class TritonMatmulForLinearLayer(matmul):
         """
         input_flat = input.flatten(0, -2)
         input_padded = pad_to_multiple(input_flat, multiple=16, dims=0)
-        output_flat = super()(input_padded[None, None, ...], weight).flatten(0, -2)
+        output_flat = super().__call__(input_padded[None, None, ...], weight).flatten(0, -2)
         output = output_flat[:input_flat.shape[0]].view(*input.shape[:-1], output_flat.shape[-1])
         return output
 
@@ -32,7 +32,8 @@ class TritonMatmulForLinearLayer(matmul):
                            ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, ...]]:
         """ :returns: output tensor, tensors_to_save """
         c_lut, c_num_locks, c_width, c_packs, _, _, _, _, _, _, _, _ = self.make_lut(input.dtype, input.device)
-        input_padded = pad_to_multiple(input.flatten(0, -2), multiple=16, dims=0)
+        input_flat = input.flatten(0, -2)
+        input_padded = pad_to_multiple(input_flat, multiple=16, dims=0)
         input_padded, weight = self._validate_inputs(input_padded, weight)
 
         output = _matmul.fn[self.mode](
@@ -40,7 +41,7 @@ class TritonMatmulForLinearLayer(matmul):
             c_lut, c_num_locks, c_width, c_packs
         )
         # remove padding and restore original shape
-        output = output.flatten(0, -2)[:input_padded.shape[0]].view(*input.shape[:-1], output.shape[-1])
+        output = output.flatten(0, -2)[:input_flat.shape[0]].view(*input.shape[:-1], output.shape[-1])
         return output, (input_padded, weight)
 
     def backward_functional(

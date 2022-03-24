@@ -173,12 +173,15 @@ class _GeneralizedLinear(torch.autograd.Function):
             extra_args = (forward_indices, backward_indices, None)
         else:
             # matmul using triton backend (or similar), can't be jit-compiled
-            input_padded = pad_to_multiple(input.flatten(0, -2), 16, dims=0)  # pre-pad to check tensors_to_save
+            input_flat = input.flatten(0, -2)
+            input_padded = pad_to_multiple(input_flat, 16, dims=0)[None, None, ...]
             matmul_output, tensors_to_save = matmul_op.forward_functional(input_padded, main_weight)
+            matmul_output = matmul_output.view(matmul_output.shape[2:])
+            matmul_output = matmul_output[:len(input_flat)].view(*input.shape[:-1], -1)
 
             # check if we can re-materialize tensors during backward
             assert len(tensors_to_save) == 2
-            assert tensors_to_save[0] is input_padded
+            assert tensors_to_save[0].data_ptr() == input_padded.data_ptr()
             assert tensors_to_save[1] is main_weight
             extra_args = (None, None, matmul_output)
 
@@ -202,11 +205,15 @@ class _GeneralizedLinear(torch.autograd.Function):
         input_flat = input.view(-1, input.shape[-1])
         if matmul_output is not None:
             output = matmul_output  # matmul was pre-computed in forward_functional
+            if bias is not None:
+                output.add_(bias.to(output.dtype))
         elif forward_indices is not None:
+            # native sparse matmul
             output = blocksparse_matmul(input_flat, main_weight, forward_indices)
             if bias is not None:
                 output.add_(bias.to(output.dtype))
         else:
+            # native dense matmul
             output = F.linear(input_flat, main_weight, bias)
 
         if lowrank_first is not None and lowrank_second is not None:
