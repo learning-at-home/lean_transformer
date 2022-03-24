@@ -94,7 +94,7 @@ class GeneralizedMatrix(nn.Module):
         if not self.use_triton:
             return None
         if self._triton_matmul_op is None:
-            if self.weight.ndim != 4 or self.weight.shape[0] != 1 or self.weight.shape[-1] == self.weight.shape[-2]:
+            if self.weight.ndim != 4 or self.weight.shape[0] != 1 or self.weight.shape[-1] != self.weight.shape[-2]:
                 raise ValueError("weights are not in triton format")
             block_size = self.weight.shape[-1]
             self._triton_matmul_op = TritonMatmulForLinearLayer(self.layout, block_size)
