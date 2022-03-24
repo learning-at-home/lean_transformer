@@ -4,8 +4,8 @@ import torch
 try:
     import triton.ops
     from triton.ops.blocksparse.matmul import matmul, _matmul
-except ModuleNotFoundError:
-    triton = matmul = Exception  # triton will not work
+except ModuleNotFoundError as e:
+    triton = matmul = e  # triton will not work
 
 from lean_transformer.utils import pad_to_multiple
 
