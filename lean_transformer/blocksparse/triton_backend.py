@@ -1,3 +1,4 @@
+import os
 from typing import Tuple, Sequence
 
 import torch
@@ -8,6 +9,9 @@ except ModuleNotFoundError as e:
     triton = matmul = e  # triton will not work
 
 from lean_transformer.utils import pad_to_multiple
+
+
+TRITON_PAD_TO = int(os.environ.get("TRITON_PAD_TO", "64"))
 
 
 class TritonMatmulForLinearLayer(matmul):
@@ -23,8 +27,9 @@ class TritonMatmulForLinearLayer(matmul):
         :returns: output tensor [*batch_dims, out_features]
         """
         input_flat = input.flatten(0, -2)
-        input_padded = pad_to_multiple(input_flat, multiple=16, dims=0)
-        output_flat = super().__call__(input_padded[None, None, ...], weight).flatten(0, -2)
+        input_padded = pad_to_multiple(input_flat, multiple=TRITON_PAD_TO, dims=0)
+        input_padded = input_padded.view(1, 1, *input_padded.shape)
+        output_flat = super().__call__(input_padded, weight).flatten(0, -2)
         output = output_flat[:input_flat.shape[0]].view(*input.shape[:-1], output_flat.shape[-1])
         return output
 
@@ -33,7 +38,7 @@ class TritonMatmulForLinearLayer(matmul):
         """ :returns: output tensor, tensors_to_save """
         c_lut, c_num_locks, c_width, c_packs, _, _, _, _, _, _, _, _ = self.make_lut(input.dtype, input.device)
         input_flat = input.flatten(0, -2)
-        input_padded = pad_to_multiple(input_flat, multiple=16, dims=0)
+        input_padded = pad_to_multiple(input_flat, multiple=TRITON_PAD_TO, dims=0)
         input_padded, weight = self._validate_inputs(input_padded, weight)
 
         output = _matmul.fn[self.mode](
@@ -51,7 +56,8 @@ class TritonMatmulForLinearLayer(matmul):
         _, _, _, _, dx_lut, dx_num_locks, dx_width, dx_packs, dw_lut, dw_num_locks, dw_width, dw_packs = \
             self.make_lut(input_padded.dtype, input_padded.device)
         if any(needs_input_grad):
-            grad_output_padded = pad_to_multiple(grad_output.flatten(0, -2), multiple=16, dims=0)
+            grad_output_padded = pad_to_multiple(grad_output.flatten(0, -2), multiple=TRITON_PAD_TO, dims=0)
+            grad_output_padded = grad_output_padded.view(1, 1, *grad_output_padded.shape)
 
         if needs_input_grad[0]:
             grad_input_mode = self.mode[1] + self.mode[0] + self.mode[2]
@@ -64,8 +70,8 @@ class TritonMatmulForLinearLayer(matmul):
             grad_input = grad_input.view(*grad_output.shape[:-1], input_padded.shape[-1])
             del grad_input_padded
         if needs_input_grad[1]:
-            mode_db = self.mode[2] + self.mode[1] + self.mode[0]
-            grad_weight = _matmul.fn[mode_db](
+            grad_weight_mode = self.mode[2] + self.mode[1] + self.mode[0]
+            grad_weight = _matmul.fn[grad_weight_mode](
                 input_padded, grad_output_padded, not self.trans_a, False, self.trans_b, self.spdims, self.block,
                 dw_lut, dw_num_locks, dw_width, dw_packs
             )

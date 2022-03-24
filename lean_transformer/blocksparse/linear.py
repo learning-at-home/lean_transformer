@@ -3,7 +3,7 @@ This module implements weight matrix sharing for linear layer: full sharing and 
 """
 import math
 from itertools import zip_longest
-from typing import Optional, Tuple, List, Callable, Sequence
+from typing import Optional, Tuple, List, Sequence
 
 import torch
 import torch.nn as nn
@@ -12,7 +12,7 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 
 from lean_transformer.blocksparse.layout import get_blocksparse_layout, get_indices_from_layout
 from lean_transformer.blocksparse.native_backend import blocksparse_matmul, blocksparse_matmul_backward
-from lean_transformer.blocksparse.triton_backend import TritonMatmulForLinearLayer
+from lean_transformer.blocksparse.triton_backend import TritonMatmulForLinearLayer, TRITON_PAD_TO
 from lean_transformer.utils import maybe_script, pad_to_multiple
 
 
@@ -150,10 +150,10 @@ class GeneralizedLinear(nn.Linear):
 class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_fwd
-    def forward(ctx, *args, matmul_op: Optional[TritonMatmulForLinearLayer] = None):
+    def forward(ctx, *args):
         output, tensors_to_save = _GeneralizedLinear.forward_functional(*args)
         ctx.save_for_backward(*tensors_to_save)
-        ctx._matmul_op = matmul_op
+        ctx._matmul_op = args[-1]
         return output
 
     @staticmethod
@@ -174,7 +174,7 @@ class _GeneralizedLinear(torch.autograd.Function):
         else:
             # matmul using triton backend (or similar), can't be jit-compiled
             input_flat = input.flatten(0, -2)
-            input_padded = pad_to_multiple(input_flat, 16, dims=0)[None, None, ...]
+            input_padded = pad_to_multiple(input_flat, TRITON_PAD_TO, dims=0)[None, None, ...]
             matmul_output, tensors_to_save = matmul_op.forward_functional(input_padded, main_weight)
             matmul_output = matmul_output.view(matmul_output.shape[2:])
             matmul_output = matmul_output[:len(input_flat)].view(*input.shape[:-1], -1)
@@ -183,7 +183,7 @@ class _GeneralizedLinear(torch.autograd.Function):
             assert len(tensors_to_save) == 2
             assert tensors_to_save[0].data_ptr() == input_padded.data_ptr()
             assert tensors_to_save[1] is main_weight
-            extra_args = (None, None, matmul_output)
+            extra_args = (None, None, matmul_output.flatten(0, -2))
 
         output, *tensors_to_save = _GeneralizedLinear._forward_jit(
             input, main_weight, bias, lowrank_first, lowrank_second, *extra_args
@@ -242,11 +242,13 @@ class _GeneralizedLinear(torch.autograd.Function):
             extra_args = (None, None)
         else:
             # matmul-backward using triton backend (or similar), can't be jit-compiled
-            input, main_weight = saved_tensors[1], saved_tensors[3]
-            matmul_needs_input_grad = (needs_input_grad[1], needs_input_grad[3])
-            input_padded = pad_to_multiple(input.flatten(0, -2), 16, dims=0)
-            extra_args = matmul_op.backward_functional(
+            input, main_weight = saved_tensors[0], saved_tensors[2]
+            matmul_needs_input_grad = (needs_input_grad[0], needs_input_grad[2])
+            input_padded = pad_to_multiple(input.flatten(0, -2), TRITON_PAD_TO, dims=0)
+            input_padded = input_padded.view(1, 1, *input_padded.shape)
+            partial_grad_input, precomputed_grad_main_weight = matmul_op.backward_functional(
                 grad_output, (input_padded, main_weight), matmul_needs_input_grad)
+            extra_args = (partial_grad_input.flatten(0, -2), precomputed_grad_main_weight)
 
         grads = _GeneralizedLinear._backward_jit(
             grad_output, *saved_tensors, *extra_args, needs_input_grad=needs_input_grad
@@ -292,7 +294,7 @@ class _GeneralizedLinear(torch.autograd.Function):
         # main matmul
         if partial_grad_input_from_matmul is not None and precomputed_grad_main_weight is not None:
             # matmul backward was pre-computed in _GeneralizedLinear.backward_functional
-            grad_input_flat = partial_grad_input_from_matmul.view_as(input)
+            grad_input_flat = partial_grad_input_from_matmul
             grad_main_weight = precomputed_grad_main_weight
 
         elif backward_indices is None:

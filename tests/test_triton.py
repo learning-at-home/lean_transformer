@@ -13,7 +13,8 @@ def test_triton_linear():
 
     with torch.no_grad():
         layer.bias[...] = torch.linspace(-10, 10, len(layer.bias)).cuda()
-    input = torch.randn(3, 512).cuda()
+
+    input = torch.randn(3, 14, 512).cuda()
     out = layer(input)
 
-    assert torch.allclose(out, layer.matrix(input) + layer.bias)
+    assert torch.allclose(out, layer.matrix(input) + layer.bias, rtol=0, atol=1e-6)
