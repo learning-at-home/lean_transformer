@@ -9,6 +9,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from lean_transformer import LeanFFN, LeanSelfAttention
 from lean_transformer.config import LeanTransformerConfig
 from lean_transformer.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
+from lean_transformer.blocksparse import GeneralizedMatrix
 
 
 class LeanTransformer(nn.Module):
@@ -89,6 +90,7 @@ class LeanTransformer(nn.Module):
             preserve_rng_state: Optional[bool] = None,
             checkpoint_attention_core: Optional[bool] = None,
             ffn_custom_grad: Optional[bool] = None,
+            update_triton_blocksparse_ops: bool = False,
     ):
         """
         Set one or more memory saving options for all compatible sub-modules. Options set to None remain unchanged.
@@ -109,6 +111,9 @@ class LeanTransformer(nn.Module):
         :param checkpoint_attention_core: re-compute attention weights during backward pass instead of storing them
         :param ffn_custom_grad: use manual FFN backprop that saves memory at the cost of a little extra compute time
 
+        :param update_triton_blocksparse_ops: if True, re-generate triton block-sparse ops in all linear layers.
+           This should be used each time you change the sparsity layout, e.g. via load_state_dict or pruning.
+           Ops will be re-generated lazily during the next forward pass.
         """
 
         sequential = self._get_sequential()
@@ -136,6 +141,11 @@ class LeanTransformer(nn.Module):
                 # if this fails, you need to make sure that optimizations are propagated to new layers
                 assert not hasattr(module, "checkpoint_attention_core")
                 assert not hasattr(module, "custom_grad")
+
+        if update_triton_blocksparse_ops:
+            for module in self.modules():
+                if isinstance(module, GeneralizedMatrix):
+                    module._triton_matmul_op = None
 
 
 class OptimizationsMixin(PreTrainedModel):

@@ -12,12 +12,8 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 
 from lean_transformer.blocksparse.layout import get_blocksparse_layout, get_indices_from_layout
 from lean_transformer.blocksparse.native_backend import blocksparse_matmul, blocksparse_matmul_backward
-from lean_transformer.utils import maybe_script, pad_to_multiple
-
-try:
-    import triton.ops
-except Exception as e:
-    triton = e
+from lean_transformer.blocksparse.triton_backend import TritonMatmulForLinearLayer
+from lean_transformer.utils import maybe_script
 
 
 class GeneralizedMatrix(nn.Module):
@@ -29,6 +25,7 @@ class GeneralizedMatrix(nn.Module):
     ):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
+        self._triton_matmul_op = None
 
         if blocksparse_layout is None:
             assert not use_triton, "triton is only used for block-sparse matrices"
@@ -45,9 +42,9 @@ class GeneralizedMatrix(nn.Module):
             self.register_buffer("layout", layout, persistent=True)
 
             if use_triton:
-                assert not isinstance(triton, Exception), f"triton is not available: {triton}"
                 self.weight = nn.Parameter(torch.empty(1, self.layout.sum().item(), block_size, block_size))
                 self.forward_indices = self.backward_indices = None
+                # note: we do not initialize triton op until forward pass in case user decides to change layout
             else:
                 # native backend
                 forward_indices, backward_indices = get_indices_from_layout(layout)
@@ -93,15 +90,15 @@ class GeneralizedMatrix(nn.Module):
             output = F.linear(F.linear(input, self.lowrank_first), self.lowrank_second, output)
         return output
 
-    def _triton_matmul(self, input: torch.Tensor) -> torch.FloatTensor:
-        if self.triton_matmul_op is None:
-            self.triton_matmul_op = triton.ops.blocksparse.matmul(
-                self.layout.cpu(), self.weight.shape[-1], 'dds', trans_a=False, trans_b=True)
-        input_flat = input.flatten(0, -2)
-        input_padded = pad_to_multiple(input_flat, multiple=self.weight.shape[-1], dims=0)
-        output_flat = self.triton_matmul_op(input_padded[None, None, ...], self.weight).flatten(0, -2)
-        output = output_flat[:input_flat.shape[0]].view(input.shape[:-1], output_flat.shape[-1])
-        return output
+    @property
+    def triton_matmul_op(self) -> Callable:
+        assert self.forward_indices is None, "Module is configured to use native backend, not triton"
+        if self._triton_matmul_op is None:
+            if self.weight.ndim != 4 or self.weight.shape[0] != 1 or self.weight.shape[-1] == self.weight.shape[-2]:
+                raise ValueError("weights are not in triton format")
+            block_size = self.weight.shape[-1]
+            self._triton_matmul_op = TritonMatmulForLinearLayer(self.layout, block_size)
+        return self._triton_matmul_op
 
 
 class GeneralizedLinear(nn.Linear):
@@ -159,15 +156,16 @@ class _GeneralizedLinear(torch.autograd.Function):
         return output
 
     @staticmethod
-    def forward_functional(input: torch.FloatTensor,
-                           main_weight: torch.FloatTensor,
-                           bias: Optional[torch.Tensor] = None,
-                           lowrank_first: Optional[torch.Tensor] = None,
-                           lowrank_second: Optional[torch.Tensor] = None,
-                           forward_indices: Optional[torch.Tensor] = None,
-                           backward_indices: Optional[torch.Tensor] = None,
-                           matmul_op: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None
-                           ):
+    def forward_functional(
+            input: torch.FloatTensor,
+            main_weight: torch.FloatTensor,
+            bias: Optional[torch.Tensor] = None,
+            lowrank_first: Optional[torch.Tensor] = None,
+            lowrank_second: Optional[torch.Tensor] = None,
+            forward_indices: Optional[torch.Tensor] = None,
+            backward_indices: Optional[torch.Tensor] = None,
+            matmul_op: Optional[TritonMatmulForLinearLayer] = None
+    ):
         """pure functional interface for use in other autograd functions"""
         if matmul_op is None:
             # matmul using pure pytorch, fused into _forward_jit
