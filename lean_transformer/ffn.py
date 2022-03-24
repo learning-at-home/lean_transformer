@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.utils.checkpoint import get_device_states, set_device_states
 
-from lean_transformer.blocksparse.linear import GeneralizedLinear, _GeneralizedLinear
+from lean_transformer.blocksparse.linear import GeneralizedLinear, _GeneralizedLinear, TritonMatmulForLinearLayer
 from lean_transformer.utils import ACT2FN
 
 
@@ -90,14 +90,17 @@ class LeanFFN(nn.Module):
             post_ln_weight, post_ln_bias = self.post_layer_norm.weight, self.post_layer_norm.bias
         i2h_lowrank_first = i2h_lowrank_second = h2o_lowrank_first = h2o_lowrank_second = None
         i2h_forward_indices = i2h_backward_indices = h2o_forward_indices = h2o_backward_indices = None
+        i2h_matmul_op = h2o_matmul_op = None
         if isinstance(self.i2h_proj, GeneralizedLinear):
             i2h_lowrank_first, i2h_lowrank_second = self.i2h_proj.get_combined_lowrank_components()
             i2h_forward_indices = self.i2h_proj.matrix.forward_indices
             i2h_backward_indices = self.i2h_proj.matrix.backward_indices
+            i2h_matmul_op = self.i2h_proj.matrix.matmul_op
         if isinstance(self.h2o_proj, GeneralizedLinear):
             h2o_lowrank_first, h2o_lowrank_second = self.h2o_proj.get_combined_lowrank_components()
             h2o_forward_indices = self.h2o_proj.matrix.forward_indices
             h2o_backward_indices = self.h2o_proj.matrix.backward_indices
+            h2o_matmul_op = self.h2o_proj.matrix.matmul_op
 
         output = _LeanFFN.apply(
             input,
@@ -109,12 +112,14 @@ class LeanFFN(nn.Module):
             i2h_lowrank_second,
             i2h_forward_indices,
             i2h_backward_indices,
+            i2h_matmul_op,
             self.h2o_proj.weight,
             self.h2o_proj.bias,
             h2o_lowrank_first,
             h2o_lowrank_second,
             h2o_forward_indices,
             h2o_backward_indices,
+            h2o_matmul_op,
             post_ln_weight,
             post_ln_bias,
             self.activation,
@@ -151,12 +156,14 @@ class _LeanFFN(torch.autograd.Function):
         i2h_lowrank_second: Optional[torch.Tensor],
         i2h_forward_indices: Optional[torch.IntTensor],
         i2h_backward_indices: Optional[torch.IntTensor],
+        i2h_matmul_op: Optional[TritonMatmulForLinearLayer],
         h2o_weight: torch.Tensor,
         h2o_bias: Optional[torch.Tensor],
         h2o_lowrank_first: Optional[torch.Tensor],
         h2o_lowrank_second: Optional[torch.Tensor],
         h2o_forward_indices: Optional[torch.IntTensor],
         h2o_backward_indices: Optional[torch.IntTensor],
+        h2o_matmul_op: Optional[TritonMatmulForLinearLayer],
         post_ln_weight: Optional[torch.Tensor],
         post_ln_bias: Optional[torch.Tensor],
         activation: callable,
@@ -176,13 +183,13 @@ class _LeanFFN(torch.autograd.Function):
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
 
         pre_activation, i2h_tensors = _GeneralizedLinear.forward_functional(
-            input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second, i2h_forward_indices, i2h_backward_indices
+            input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second, i2h_forward_indices, i2h_backward_indices, i2h_matmul_op
         )
 
         hid_act = _LeanFFN._apply_activation(pre_activation, ctx._activation, ctx._gated)
 
         out, h2o_tensors = _GeneralizedLinear.forward_functional(
-            hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second, h2o_forward_indices, h2o_backward_indices
+            hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second, h2o_forward_indices, h2o_backward_indices, h2o_matmul_op
         )
 
         if ctx._use_post_ln:
@@ -291,8 +298,8 @@ class _LeanFFN(torch.autograd.Function):
             grad_input = grad_input.view(*input.shape)
 
         return (grad_input, grad_ln_weight, grad_ln_bias,
-                grad_i2h_weight, grad_i2h_bias, grad_i2h_lowrank_first, grad_i2h_lowrank_second, None, None,
-                grad_h2o_weight, grad_h2o_bias, grad_h2o_lowrank_first, grad_h2o_lowrank_second, None, None,
+                grad_i2h_weight, grad_i2h_bias, grad_i2h_lowrank_first, grad_i2h_lowrank_second, None, None, None,
+                grad_h2o_weight, grad_h2o_bias, grad_h2o_lowrank_first, grad_h2o_lowrank_second, None, None, None,
                 grad_post_ln_weight, grad_post_ln_bias, None, None, None, None, None, None)
 
     @staticmethod

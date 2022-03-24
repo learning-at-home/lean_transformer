@@ -13,18 +13,17 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 from lean_transformer.blocksparse.layout import get_blocksparse_layout, get_indices_from_layout
 from lean_transformer.blocksparse.native_backend import blocksparse_matmul, blocksparse_matmul_backward
 from lean_transformer.blocksparse.triton_backend import TritonMatmulForLinearLayer
-from lean_transformer.utils import maybe_script
+from lean_transformer.utils import maybe_script, pad_to_multiple
 
 
 class GeneralizedMatrix(nn.Module):
     """A module that stores a shared pytorch tensor for use in GeneralizedLinear layers"""
 
-    def __init__(
-            self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None, lowrank_dim: int = 0,
-            use_triton: bool = False
-    ):
+    def __init__(self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None,
+                 lowrank_dim: int = 0, use_triton: bool = False):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
+        self.use_triton = use_triton
         self._triton_matmul_op = None
 
         if blocksparse_layout is None:
@@ -81,7 +80,7 @@ class GeneralizedMatrix(nn.Module):
             if self.forward_indices is not None:
                 output = blocksparse_matmul(input, self.weight, self.forward_indices)
             else:
-                output = self._triton_matmul(input)
+                output = self.matmul_op(input, self.weight)
         else:
             # dense weight
             output = F.linear(input, self.weight)
@@ -91,8 +90,9 @@ class GeneralizedMatrix(nn.Module):
         return output
 
     @property
-    def triton_matmul_op(self) -> Callable:
-        assert self.forward_indices is None, "Module is configured to use native backend, not triton"
+    def matmul_op(self) -> Optional[TritonMatmulForLinearLayer]:
+        if not self.use_triton:
+            return None
         if self._triton_matmul_op is None:
             if self.weight.ndim != 4 or self.weight.shape[0] != 1 or self.weight.shape[-1] == self.weight.shape[-2]:
                 raise ValueError("weights are not in triton format")
@@ -144,15 +144,16 @@ class GeneralizedLinear(nn.Linear):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return _GeneralizedLinear.apply(
             input, self.weight, self.bias, *self.get_combined_lowrank_components(),
-            self.matrix.forward_indices, self.matrix.backward_indices)
+            self.matrix.forward_indices, self.matrix.backward_indices, self.matrix.matmul_op)
 
 
 class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_fwd
-    def forward(ctx, *args):
+    def forward(ctx, *args, matmul_op: Optional[TritonMatmulForLinearLayer] = None):
         output, tensors_to_save = _GeneralizedLinear.forward_functional(*args)
         ctx.save_for_backward(*tensors_to_save)
+        ctx._matmul_op = matmul_op
         return output
 
     @staticmethod
@@ -172,8 +173,14 @@ class _GeneralizedLinear(torch.autograd.Function):
             extra_args = (forward_indices, backward_indices, None)
         else:
             # matmul using triton backend (or similar), can't be jit-compiled
-            partial_output = matmul_op(input, main_weight)
-            extra_args = (None, None, partial_output)
+            input_padded = pad_to_multiple(input.flatten(0, -2), 16, dims=0)  # pre-pad to check tensors_to_save
+            matmul_output, tensors_to_save = matmul_op.forward_functional(input_padded, main_weight)
+
+            # check if we can re-materialize tensors during backward
+            assert len(tensors_to_save) == 2
+            assert tensors_to_save[0] is input_padded
+            assert tensors_to_save[1] is main_weight
+            extra_args = (None, None, matmul_output)
 
         output, *tensors_to_save = _GeneralizedLinear._forward_jit(
             input, main_weight, bias, lowrank_first, lowrank_second, *extra_args
@@ -190,11 +197,11 @@ class _GeneralizedLinear(torch.autograd.Function):
         lowrank_second: Optional[torch.Tensor],
         forward_indices: Optional[torch.Tensor],
         backward_indices: Optional[torch.Tensor],
-        partial_output: Optional[torch.Tensor]
+        matmul_output: Optional[torch.Tensor]
     ):
         input_flat = input.view(-1, input.shape[-1])
-        if partial_output is not None:
-            output = partial_output  # matmul was pre-computed in forward_functional
+        if matmul_output is not None:
+            output = matmul_output  # matmul was pre-computed in forward_functional
         elif forward_indices is not None:
             output = blocksparse_matmul(input_flat, main_weight, forward_indices)
             if bias is not None:
@@ -216,14 +223,27 @@ class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output: torch.Tensor):
-        return _GeneralizedLinear.backward_functional(grad_output, ctx.saved_tensors, ctx.needs_input_grad)
+        return _GeneralizedLinear.backward_functional(grad_output, ctx.saved_tensors, ctx.needs_input_grad, ctx._matmul_op)
 
     @staticmethod
-    def backward_functional(
-            grad_output: torch.Tensor, saved_tensors: Sequence[torch.Tensor], needs_input_grad: List[bool]
-            ) -> Sequence[Optional[torch.Tensor]]:
+    def backward_functional(grad_output: torch.Tensor, saved_tensors: Sequence[torch.Tensor],
+                            needs_input_grad: List[bool], matmul_op: Optional[TritonMatmulForLinearLayer] = None,
+                            ) -> Sequence[Optional[torch.Tensor]]:
         """pure functional interface for use in other autograd functions"""
-        grads = _GeneralizedLinear._backward_jit(grad_output, *saved_tensors, needs_input_grad=needs_input_grad)
+        if matmul_op is None:
+            # matmul-backward using pure pytorch, fused into _backward_jit
+            extra_args = (None, None)
+        else:
+            # matmul-backward using triton backend (or similar), can't be jit-compiled
+            input, main_weight = saved_tensors[1], saved_tensors[3]
+            matmul_needs_input_grad = (needs_input_grad[1], needs_input_grad[3])
+            input_padded = pad_to_multiple(input.flatten(0, -2), 16, dims=0)
+            extra_args = matmul_op.backward_functional(
+                grad_output, (input_padded, main_weight), matmul_needs_input_grad)
+
+        grads = _GeneralizedLinear._backward_jit(
+            grad_output, *saved_tensors, *extra_args, needs_input_grad=needs_input_grad
+        )
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod
@@ -235,6 +255,8 @@ class _GeneralizedLinear(torch.autograd.Function):
                       lowrank_first: Optional[torch.Tensor],
                       lowrank_second: Optional[torch.Tensor],
                       backward_indices: Optional[torch.Tensor],
+                      partial_grad_input_from_matmul: Optional[torch.Tensor],
+                      precomputed_grad_main_weight: Optional[torch.Tensor],
                       needs_input_grad: List[bool]):
         grad_input = grad_input_flat = grad_main_weight = grad_lowrank_first = grad_lowrank_second = grad_bias \
             = grad_output_flat_transposed = grad_lowrank_hid_flat = lowrank_hid_flat = torch.empty(0)
@@ -259,7 +281,14 @@ class _GeneralizedLinear(torch.autograd.Function):
             # ^-- [lowrank_dim, in_features]
         if needs_input_grad[2]:
             grad_bias = grad_output_flat.sum(dim=0)  # [out_features]
-        if backward_indices is None:
+
+        # main matmul
+        if partial_grad_input_from_matmul is not None and precomputed_grad_main_weight is not None:
+            # matmul backward was pre-computed in _GeneralizedLinear.backward_functional
+            grad_input_flat = partial_grad_input_from_matmul.view_as(input)
+            grad_main_weight = precomputed_grad_main_weight
+
+        elif backward_indices is None:
             # dense shared matrix
             if needs_input_grad[1]:
                 grad_main_weight = torch.matmul(grad_output_flat_transposed, input_flat)
@@ -268,10 +297,12 @@ class _GeneralizedLinear(torch.autograd.Function):
                 grad_input_flat = torch.matmul(grad_output_flat, main_weight)
         else:
             # block-sparse shared matrix
-            grad_input_flat, grad_main_weight = blocksparse_matmul_backward(
-                grad_output_flat, input_flat, main_weight, backward_indices,
-                input_requires_grad=needs_input_grad[0], weight_requires_grad=needs_input_grad[1])
+            if needs_input_grad[0] or needs_input_grad[1]:
+                grad_input_flat, grad_main_weight = blocksparse_matmul_backward(
+                    grad_output_flat, input_flat, main_weight, backward_indices,
+                    input_requires_grad=needs_input_grad[0], weight_requires_grad=needs_input_grad[1])
 
+        # low-rank adapter
         if needs_input_grad[0] and lowrank_first is not None:
             # grad w.r.t. input through low-rank components
             if 'xla' not in grad_output.device.type:

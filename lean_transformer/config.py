@@ -75,6 +75,7 @@ class LeanTransformerConfig(PretrainedConfig):
         num_attention_heads: int = 64,
         intermediate_size: Optional[int] = None,
         weight_layout: Optional[str] = None,
+        use_triton_blocksparse: bool = False,
         lowrank_dim: int = 0,
         hidden_act: str = "gelu_fused",
         hidden_act_gated: bool = False,
@@ -102,6 +103,7 @@ class LeanTransformerConfig(PretrainedConfig):
         self.adapter_dim = adapter_dim
         self.lowrank_dim = lowrank_dim
         self.weight_layout = weight_layout
+        self.use_triton_blocksparse = use_triton_blocksparse
 
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
@@ -190,15 +192,18 @@ class LeanTransformerConfig(PretrainedConfig):
         """
         assert 0 <= index <= self.total_shared_matrix_sets
         if key == "self_attn_qkv":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.weight_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.weight_layout, self.lowrank_dim,
+                                     use_triton=self.use_triton_blocksparse)
         if key == "self_attn_out":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.weight_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.weight_layout, self.lowrank_dim,
+                                     use_triton=self.use_triton_blocksparse)
         if key == "ffn_first":
             ffn_hidden_including_gate = self.intermediate_size * (2 if self.hidden_act_gated else 1)
-            return GeneralizedMatrix(
-                self.hidden_size, ffn_hidden_including_gate, self.weight_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, ffn_hidden_including_gate, self.weight_layout, self.lowrank_dim,
+                                     use_triton=self.use_triton_blocksparse)
         if key == "ffn_second":
-            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.weight_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.weight_layout, self.lowrank_dim,
+                                     use_triton=self.use_triton_blocksparse)
 
         raise NotImplementedError(f"Unexpected matrix key: {key}")
 
