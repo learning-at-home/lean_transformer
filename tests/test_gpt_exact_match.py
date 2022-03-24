@@ -51,7 +51,7 @@ def test_gpt_forward_backward(filename: str = HERE + "gpt_test_data.pth"):
 def convert_from_legacy(test_data: dict):
     config = json.loads(test_data['config'])
     if 'block_size' in config:
-        config['blocksparse_layout'] = f"pixelfly(block_size={config.pop('block_size')})"
+        config['weight_layout'] = f"pixelfly(block_size={config.pop('block_size')})"
     config["post_layer_norm"] = config.pop("sandwich_norm", False)
     config.update(out_proj_bias=True, tie_embedding_hidden_mapping=True)
     test_data['config'] = json.dumps(config)
