@@ -11,7 +11,7 @@ except ModuleNotFoundError as e:
 from lean_transformer.utils import pad_to_multiple
 
 
-TRITON_PAD_TO = int(os.environ.get("TRITON_PAD_TO", "64"))
+TRITON_PAD_TO = int(os.environ.get("TRITON_PAD_TO", "128"))
 
 
 class TritonMatmulForLinearLayer(matmul):
