@@ -24,14 +24,14 @@ def test_lean_attn():
         attention_core = BatchStepAttentionCore(hidden_dim,
                                                 heads, batch_step=batch_step)
         test_mha = LeanSelfAttention(hidden_dim, heads, dropout=0,
-                                     layer_norm=False, residual=False,
+                                     pre_layer_norm=False, residual=False,
                                      attention_core=attention_core,
                                      checkpoint_attention_core=False)
 
-        test_mha.dense_qkv.weight = gtruth_mha.in_proj_weight
-        test_mha.dense_qkv.bias = gtruth_mha.in_proj_bias
-        test_mha.dense_out.weight = gtruth_mha.out_proj.weight
-        test_mha.dense_out.bias = gtruth_mha.out_proj.bias
+        test_mha.qkv_proj.weight = gtruth_mha.in_proj_weight
+        test_mha.qkv_proj.bias = gtruth_mha.in_proj_bias
+        test_mha.out_proj.weight = gtruth_mha.out_proj.weight
+        test_mha.out_proj.bias = gtruth_mha.out_proj.bias
 
         device = torch.device('cpu')
 

@@ -32,7 +32,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
     :param adapter_dim: if share_large_matrices is used, each layer can make LoRA-like adapters to the shared matrices.
       The adapter_dim corresponds to a hidden dimension of that adapter (see arXiv:2106.09685 for LoRA)
-    :param blocksparse_layout: if specified, replaces weight matrices in FFN and attention with block-sparse matrices,
+    :param weight_layout: if specified, replaces weight matrices in FFN and attention with block-sparse matrices,
       defined by this layout. For instance, "pixelfly(block_size=128)" is Pixelated Buttefly (arXiv:2112.00029 ).
       This does not affect embeddings or attention logits.
     :param lowrank_dim: if specified, add a (shared) low-rank component to the block-sparse matrix, as recommended
@@ -42,8 +42,8 @@ class LeanTransformerConfig(PretrainedConfig):
       note: gated activations require 1.5x more parameters compared to their non-gated variants.
     :param attn_qkv_bias: whether or not to use biases in attention qkv projection
     :param out_proj_bias: whether or not to use biases in output projections of both attention and ffn,
-      defaults to True unless sandwich_norm is enabled -- since sandwich norm already has a bias component
-    :param sandwich_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
+      defaults to True unless post_layer_norm is enabled -- since post-norm already has a bias component
+    :param post_layer_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
        as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
        more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
 
@@ -74,13 +74,14 @@ class LeanTransformerConfig(PretrainedConfig):
         adapter_dim: int = 0,
         num_attention_heads: int = 64,
         intermediate_size: Optional[int] = None,
-        blocksparse_layout: Optional[str] = None,
+        weight_layout: Optional[str] = None,
+        blocksparse_backend: str = 'native',
         lowrank_dim: int = 0,
         hidden_act: str = "gelu_fused",
         hidden_act_gated: bool = False,
         attn_qkv_bias: bool = True,
         out_proj_bias: Optional[bool] = None,
-        sandwich_norm: bool = False,
+        post_layer_norm: bool = False,
         reversible: bool = False,
         hidden_dropout_prob: float = 0,
         attention_probs_dropout_prob: float = 0,
@@ -90,6 +91,10 @@ class LeanTransformerConfig(PretrainedConfig):
         initializer_range: Optional[float] = None,
         **kwargs,
     ):
+        if "sandwich_norm" in kwargs:
+            raise ValueError("sandwich_norm was renamed, please use pre_layer_norm=True and post_layer_norm=True")
+        if "block_size" in kwargs:
+            raise ValueError("block_size was renamed, use weight_layout='pixelfly(block_size=128)'")
         if intermediate_size is None:
             intermediate_size = 4 * hidden_size
         super().__init__(**kwargs)
@@ -97,7 +102,8 @@ class LeanTransformerConfig(PretrainedConfig):
         self.intermediate_size = intermediate_size
         self.adapter_dim = adapter_dim
         self.lowrank_dim = lowrank_dim
-        self.blocksparse_layout = blocksparse_layout
+        self.weight_layout = weight_layout
+        self.blocksparse_backend = blocksparse_backend
 
         self.num_hidden_layers = num_hidden_layers
         self.num_hidden_groups = num_hidden_groups if num_hidden_groups is not None else self.num_hidden_layers
@@ -119,8 +125,8 @@ class LeanTransformerConfig(PretrainedConfig):
         self.hidden_act_gated = hidden_act_gated
         self.layer_norm_eps = layer_norm_eps
         self.attn_qkv_bias = attn_qkv_bias
-        self.out_proj_bias = out_proj_bias if out_proj_bias is not None else not sandwich_norm
-        self.sandwich_norm = sandwich_norm
+        self.out_proj_bias = out_proj_bias if out_proj_bias is not None else not post_layer_norm
+        self.post_layer_norm = post_layer_norm
         self.reversible = reversible
 
         self.attention_type = attention_type
@@ -186,15 +192,18 @@ class LeanTransformerConfig(PretrainedConfig):
         """
         assert 0 <= index <= self.total_shared_matrix_sets
         if key == "self_attn_qkv":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.blocksparse_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.weight_layout, self.lowrank_dim,
+                                     blocksparse_backend=self.blocksparse_backend)
         if key == "self_attn_out":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.blocksparse_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.weight_layout, self.lowrank_dim,
+                                     blocksparse_backend=self.blocksparse_backend)
         if key == "ffn_first":
             ffn_hidden_including_gate = self.intermediate_size * (2 if self.hidden_act_gated else 1)
-            return GeneralizedMatrix(
-                self.hidden_size, ffn_hidden_including_gate, self.blocksparse_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.hidden_size, ffn_hidden_including_gate, self.weight_layout, self.lowrank_dim,
+                                     blocksparse_backend=self.blocksparse_backend)
         if key == "ffn_second":
-            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.blocksparse_layout, self.lowrank_dim)
+            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.weight_layout, self.lowrank_dim,
+                                     blocksparse_backend=self.blocksparse_backend)
 
         raise NotImplementedError(f"Unexpected matrix key: {key}")
 

@@ -9,6 +9,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from lean_transformer import LeanFFN, LeanSelfAttention
 from lean_transformer.config import LeanTransformerConfig
 from lean_transformer.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
+from lean_transformer.blocksparse import GeneralizedMatrix
 
 
 class LeanTransformer(nn.Module):
@@ -50,11 +51,11 @@ class LeanTransformer(nn.Module):
             attention_core=config.get_attention_core(),
             dropout=config.hidden_dropout_prob,
             layer_norm_eps=config.layer_norm_eps,
-            dense_qkv=config.get_linear_layer(
+            qkv_proj=config.get_linear_layer(
                 "self_attn_qkv", index, config.hidden_size, config.hidden_size * 3, bias=config.attn_qkv_bias),
-            dense_out=config.get_linear_layer(
+            out_proj=config.get_linear_layer(
                 "self_attn_out", index, config.hidden_size, config.hidden_size, bias=config.out_proj_bias),
-            sandwich_norm=config.sandwich_norm,
+            post_layer_norm=config.post_layer_norm,
             residual=not config.reversible, checkpoint_attention_core=not config.reversible
         )
 
@@ -66,15 +67,19 @@ class LeanTransformer(nn.Module):
             gated=config.hidden_act_gated,
             layer_norm_eps=config.layer_norm_eps,
             dropout=config.hidden_dropout_prob,
-            dense_i2h=config.get_linear_layer("ffn_first", index, config.hidden_size,
-                                              config.intermediate_size * (1 + config.hidden_act_gated), bias=True),
-            dense_h2o=config.get_linear_layer("ffn_second", index, config.intermediate_size,
-                                              config.hidden_size, bias=config.out_proj_bias),
-            sandwich_norm=config.sandwich_norm,
+            i2h_proj=config.get_linear_layer("ffn_first", index, config.hidden_size,
+                                             config.intermediate_size * (1 + config.hidden_act_gated), bias=True),
+            h2o_proj=config.get_linear_layer("ffn_second", index, config.intermediate_size,
+                                             config.hidden_size, bias=config.out_proj_bias),
+            post_layer_norm=config.post_layer_norm,
             residual=not config.reversible,
         )
 
     def forward(self, hidden_states, attention_mask=None):
+        """
+        :param hidden_states: input embeddings, batch-first (e.g. [batch_size, seq_length, hidden-size])
+        :param attention_mask: an additive mask with zeros for active elements and large negative values for masked
+        """
         hidden_states = self._get_sequential()(hidden_states, attention_mask=attention_mask)
         return BaseModelOutput(last_hidden_state=self.post_layer_norm(hidden_states))
 
@@ -89,6 +94,7 @@ class LeanTransformer(nn.Module):
             preserve_rng_state: Optional[bool] = None,
             checkpoint_attention_core: Optional[bool] = None,
             ffn_custom_grad: Optional[bool] = None,
+            update_triton_blocksparse_ops: bool = False,
     ):
         """
         Set one or more memory saving options for all compatible sub-modules. Options set to None remain unchanged.
@@ -109,6 +115,9 @@ class LeanTransformer(nn.Module):
         :param checkpoint_attention_core: re-compute attention weights during backward pass instead of storing them
         :param ffn_custom_grad: use manual FFN backprop that saves memory at the cost of a little extra compute time
 
+        :param update_triton_blocksparse_ops: if True, re-generate triton block-sparse ops in all linear layers.
+           This should be used each time you change the sparsity layout, e.g. via load_state_dict or pruning.
+           Ops will be re-generated lazily during the next forward pass.
         """
 
         sequential = self._get_sequential()
@@ -131,11 +140,16 @@ class LeanTransformer(nn.Module):
             if checkpoint_attention_core is not None and isinstance(module, LeanSelfAttention):
                 module.checkpoint_attention_core = checkpoint_attention_core
             elif ffn_custom_grad is not None and isinstance(module, LeanFFN):
-                module.custom_grad = ffn_custom_grad
+                module.ffn_custom_grad = ffn_custom_grad
             else:
                 # if this fails, you need to make sure that optimizations are propagated to new layers
-                assert not hasattr(module, "checkpoint_attention_core")
-                assert not hasattr(module, "custom_grad")
+                assert checkpoint_attention_core is None or not hasattr(module, "checkpoint_attention_core"), module
+                assert ffn_custom_grad is None or not hasattr(module, "ffn_custom_grad"), module
+
+        if update_triton_blocksparse_ops:
+            for module in self.modules():
+                if isinstance(module, GeneralizedMatrix):
+                    module._matmul_op = None
 
 
 class OptimizationsMixin(PreTrainedModel):

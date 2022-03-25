@@ -53,8 +53,8 @@ def test_semishared_linear_naive():
 class ReferenceLinear(nn.Module):
     def __init__(self, matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
-        self.shared_matrix = matrix
-        self.out_features, self.in_features = self.shared_matrix.shape
+        self.matrix = matrix
+        self.out_features, self.in_features = self.matrix.shape
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
 
         if adapter_dim != 0:
@@ -68,7 +68,7 @@ class ReferenceLinear(nn.Module):
             self.adapter_first = self.adapter_second = None
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        output = self.shared_matrix(input)
+        output = self.matrix(input)
         if self.adapter_first is not None:
             output = F.linear(F.linear(input, self.adapter_first), self.adapter_second, output)
         if self.bias is not None:

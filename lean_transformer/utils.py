@@ -2,7 +2,9 @@ import functools
 import os
 
 import torch
+from torch.nn import functional as F
 from transformers.activations import ACT2FN as HF_ACT2FN
+from typing import List, Union
 
 try:
     from hivemind.utils.logging import get_logger
@@ -46,6 +48,33 @@ class GELU(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor):
         input, = ctx.saved_tensors
         return gelu_fused_grad(grad_output, input)
+
+
+@maybe_script
+def pad_to_multiple(tensor, multiple: int, dims: Union[int, List[int]] = -1, value: float = 0):
+    """
+    Pad batch dimension to be a multiple of a given value, typically 16 (required by triton matmul)
+    Adapted from https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/autopadder.py
+    """
+    dims = [dims] if isinstance(dims, int) else list(dims)
+    dims = [d if d >= 0 else tensor.ndim + d for d in dims]
+    padding = [0] * (2 * tensor.ndim)
+    no_padding = True
+    for d in dims:
+        d = int(d)
+        size = tensor.size(d)
+        # Pytorch's JIT doesn't like divmod
+        # m, remainder = divmod(size, multiple)
+        m = size // multiple
+        remainder = size - m * multiple
+        if remainder != 0:
+            ix: int = 2 * (int(tensor.ndim) - d - 1) + 1
+            padding[ix] = multiple - remainder
+            no_padding = False
+    if no_padding:
+        return tensor
+    else:
+        return F.pad(tensor, padding, value=value)
 
 
 ACT2FN = dict(HF_ACT2FN, gelu_fused=GELU.apply)

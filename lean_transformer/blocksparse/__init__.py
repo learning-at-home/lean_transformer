@@ -19,3 +19,4 @@ Layout / block size restrictions can be circumvented using tiling padding with z
 from .native_backend import *
 from .layout import *
 from .linear import *
+from .triton_backend import *

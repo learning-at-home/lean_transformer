@@ -174,7 +174,7 @@ def butterfly_factor_to_matrix(twiddle: torch.Tensor, factor_index: int) -> torc
     return out.t()  # Transpose because we assume the 1st dimension of x is the batch dimension
 
 
-def get_indices_from_layout(layout: torch.BoolTensor) -> Tuple[torch.IntTensor, torch.IntTensor]:
+def get_indices_from_layout(layout: torch.BoolTensor) -> Tuple[torch.IntTensor, torch.LongTensor]:
     """
     Convert boolean incidence matrix to indices for F.embedding_bag
 
