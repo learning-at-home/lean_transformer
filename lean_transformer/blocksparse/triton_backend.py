@@ -6,7 +6,8 @@ try:
     import triton.ops
     from triton.ops.blocksparse.matmul import matmul, _matmul
 except ModuleNotFoundError as e:
-    triton = matmul = e  # triton will not work
+    triton = e  # triton will not work
+    matmul = object
 
 from lean_transformer.utils import pad_to_multiple
 
