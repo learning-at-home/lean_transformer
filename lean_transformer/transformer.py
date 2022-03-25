@@ -149,7 +149,7 @@ class LeanTransformer(nn.Module):
         if update_triton_blocksparse_ops:
             for module in self.modules():
                 if isinstance(module, GeneralizedMatrix):
-                    module._triton_matmul_op = None
+                    module._matmul_op = None
 
 
 class OptimizationsMixin(PreTrainedModel):

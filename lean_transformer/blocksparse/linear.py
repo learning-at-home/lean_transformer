@@ -24,7 +24,7 @@ class GeneralizedMatrix(nn.Module):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
         self.blocksparse_backend = blocksparse_backend
-        self._triton_matmul_op = None
+        self._matmul_op = None
 
         if blocksparse_layout is None:
             assert not blocksparse_backend, "triton is only used for block-sparse matrices"
@@ -93,14 +93,14 @@ class GeneralizedMatrix(nn.Module):
 
     @property
     def matmul_op(self) -> Optional[TritonMatmulForLinearLayer]:
-        if not self.blocksparse_backend:
+        if self.blocksparse_backend == 'native':
             return None
-        if self._triton_matmul_op is None:
+        if self._matmul_op is None:
             if self.weight.ndim != 4 or self.weight.shape[0] != 1 or self.weight.shape[-1] != self.weight.shape[-2]:
                 raise ValueError("weights are not in triton format")
             block_size = self.weight.shape[-1]
-            self._triton_matmul_op = TritonMatmulForLinearLayer(self.layout, block_size)
-        return self._triton_matmul_op
+            self._matmul_op = TritonMatmulForLinearLayer(self.layout, block_size)
+        return self._matmul_op
 
 
 class GeneralizedLinear(nn.Linear):
