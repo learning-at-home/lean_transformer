@@ -27,7 +27,7 @@ class GeneralizedMatrix(nn.Module):
         self._matmul_op = None
 
         if blocksparse_layout is None:
-            assert not blocksparse_backend, "triton is only used for block-sparse matrices"
+            assert blocksparse_backend == 'native', "triton is only used for block-sparse matrices"
             # fully-connected weight matrix
             self.weight = nn.Parameter(torch.empty(out_features, in_features))
             nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
