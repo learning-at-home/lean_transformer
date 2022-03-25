@@ -175,6 +175,7 @@ class _LeanFFN(torch.autograd.Function):
     ):
         ctx._dropout, ctx._training, ctx._ln_eps = dropout, training, ln_eps
         ctx._activation, ctx._gated, ctx._residual = activation, gated, residual
+        ctx._i2h_matmul_op, ctx._h2o_matmul_op = i2h_matmul_op, h2o_matmul_op
         ctx._use_post_ln = post_ln_weight is not None
 
         dropout_rng, post_ln_input = None, None  # optional tensors to save
@@ -183,13 +184,15 @@ class _LeanFFN(torch.autograd.Function):
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
 
         pre_activation, i2h_tensors = _GeneralizedLinear.forward_functional(
-            input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second, i2h_forward_indices, i2h_backward_indices, i2h_matmul_op
+            input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second,
+            i2h_forward_indices, i2h_backward_indices, i2h_matmul_op
         )
 
         hid_act = _LeanFFN._apply_activation(pre_activation, ctx._activation, ctx._gated)
 
         out, h2o_tensors = _GeneralizedLinear.forward_functional(
-            hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second, h2o_forward_indices, h2o_backward_indices, h2o_matmul_op
+            hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second,
+            h2o_forward_indices, h2o_backward_indices, h2o_matmul_op
         )
 
         if ctx._use_post_ln:
@@ -217,14 +220,14 @@ class _LeanFFN(torch.autograd.Function):
     def _h2o_backward(ctx, grad_output: torch.Tensor, hid_act: torch.Tensor):
         saved_tensors = (hid_act, *ctx.saved_tensors[-ctx._num_h2o_tensors + 1 :])
         needs_input_grad = [hid_act.requires_grad, *ctx.needs_input_grad[9:15]]
-        grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad)
+        grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad, ctx.h2o_matmul_op)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod
     def _i2h_backward(ctx, grad_output: torch.Tensor, input_ln: torch.Tensor):
         saved_tensors = (input_ln, *ctx.saved_tensors[-ctx._num_i2h_tensors - ctx._num_h2o_tensors + 2 : -ctx._num_h2o_tensors + 1])
         needs_input_grad = [input_ln.requires_grad, *ctx.needs_input_grad[3:9]]
-        grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad)
+        grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad, ctx.i2h_matmul_op)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod
