@@ -220,14 +220,14 @@ class _LeanFFN(torch.autograd.Function):
     def _h2o_backward(ctx, grad_output: torch.Tensor, hid_act: torch.Tensor):
         saved_tensors = (hid_act, *ctx.saved_tensors[-ctx._num_h2o_tensors + 1 :])
         needs_input_grad = [hid_act.requires_grad, *ctx.needs_input_grad[9:15]]
-        grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad, ctx.h2o_matmul_op)
+        grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad, ctx._h2o_matmul_op)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod
     def _i2h_backward(ctx, grad_output: torch.Tensor, input_ln: torch.Tensor):
         saved_tensors = (input_ln, *ctx.saved_tensors[-ctx._num_i2h_tensors - ctx._num_h2o_tensors + 2 : -ctx._num_h2o_tensors + 1])
         needs_input_grad = [input_ln.requires_grad, *ctx.needs_input_grad[3:9]]
-        grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad, ctx.i2h_matmul_op)
+        grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad, ctx._i2h_matmul_op)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod

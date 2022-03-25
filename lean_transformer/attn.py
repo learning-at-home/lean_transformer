@@ -95,7 +95,7 @@ class SimpleAttentionCore(nn.Module):
         :param query: [batch_size, query_seq_len, hidden_size]
         :param key: [batch_size, kv_seq_len, hidden_size]
         :param value: [batch_size, kv_seq_len, hidden_size]
-        :param attention_mask: float [(optional heads), batch, query_seq_len, kv_seq_length]
+        :param attention_mask: float [batch, (optional heads), query_seq_len, kv_seq_length]
         :note: attention_mask should be equal to zero for non-masked tokens and a large negative value for masked ones
         :return: (outputs, probs)
           - outputs shape: [batch_size, query_seq_len, hidden_size]

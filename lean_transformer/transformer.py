@@ -76,6 +76,10 @@ class LeanTransformer(nn.Module):
         )
 
     def forward(self, hidden_states, attention_mask=None):
+        """
+        :param hidden_states: input embeddings, batch-first (e.g. [batch_size, seq_length, hidden-size])
+        :param attention_mask: an additive mask with zeros for active elements and large negative values for masked
+        """
         hidden_states = self._get_sequential()(hidden_states, attention_mask=attention_mask)
         return BaseModelOutput(last_hidden_state=self.post_layer_norm(hidden_states))
 
