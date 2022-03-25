@@ -60,7 +60,8 @@ def test_triton_linear():
 
 
 @pytest.mark.forked
-def test_triton_ffn_transformer():
+@pytest.mark.parameterize("autocast, atol", [(False, 1e-6), (True, 0.05)])
+def test_triton_ffn_transformer(autocast: bool = False, atol: float = 1e-5):
     if not torch.cuda.is_available():
         pytest.skip("This test requires GPU")
 
@@ -76,23 +77,22 @@ def test_triton_ffn_transformer():
 
     model.zero_grad()
     model.set_optimizations(ffn_custom_grad=False)
-    hidden = model(input_embs, mask).last_hidden_state
-    (hidden @ z).sum().backward()
+    with torch.cuda.amp.autocast(autocast):
+        hidden = model(input_embs, mask).last_hidden_state
+        (hidden @ z).sum().backward()
 
-    hidden_ref = hidden.clone()
-    grads_ref = [p.grad.clone() for p in model.parameters()]
-    grad_input_embs_ref = input_embs.grad.clone()
+        hidden_ref = hidden.clone()
+        grads_ref = [p.grad.clone() for p in model.parameters()]
+        grad_input_embs_ref = input_embs.grad.clone()
 
-    input_embs.grad.zero_()
-    model.zero_grad()
-    model.set_optimizations(ffn_custom_grad=True)
-    hidden = model(input_embs, mask).last_hidden_state
-    (hidden @ z).sum().backward()
+        input_embs.grad.zero_()
+        model.zero_grad()
+        model.set_optimizations(ffn_custom_grad=True)
+        hidden = model(input_embs, mask).last_hidden_state
+        (hidden @ z).sum().backward()
 
-    hidden_custom = hidden.clone()
-
-    assert torch.allclose(hidden, hidden_custom, rtol=0, atol=1e-6)
-    assert torch.allclose(grad_input_embs_ref, input_embs.grad, rtol=0, atol=1e-6)
+    assert torch.allclose(hidden, hidden_ref, rtol=0, atol=atol)
+    assert torch.allclose(grad_input_embs_ref, input_embs.grad, rtol=0, atol=atol)
 
     for (name, param), grad_ref in zip(model.named_parameters(), grads_ref):
-        assert torch.allclose(grad_ref, param.grad, rtol=0, atol=1e-6), name
+        assert torch.allclose(grad_ref, param.grad, rtol=0, atol=atol), name
