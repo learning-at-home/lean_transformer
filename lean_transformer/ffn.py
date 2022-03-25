@@ -26,7 +26,7 @@ class LeanFFN(nn.Module):
        more stable for deep transformers. This technique is also a part of NormFormer ( arXiv:2110.09456 )
     :param dropout: hidden dropout probability, applied to the output projection (before adding residual)
     :param residual: if True, adds the original layer input to the final layer output
-    :param custom_grad: if True (default), use custom backprop code that saves memory at the cost of ~5% extra compute
+    :param ffn_custom_grad: if True (default), use custom backprop code that saves memory at the cost of ~5% extra compute
 
     :param i2h_proj: custom *first* linear layer (hidden_size -> intermediate_size or 2x indermediate_size)
     :param h2o_proj: custom *second* linear layer (intermediate_size -> hidden_size)
@@ -44,13 +44,13 @@ class LeanFFN(nn.Module):
         i2h_proj: Optional[nn.Linear] = None,
         h2o_proj: Optional[nn.Linear] = None,
         residual: bool = True,
-        custom_grad: bool = True,
+        ffn_custom_grad: bool = True,
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
         self.i2h_proj = nn.Linear(hidden_size, i2h_out_features) if i2h_proj is None else i2h_proj
         self.h2o_proj = nn.Linear(intermediate_size, hidden_size) if h2o_proj is None else h2o_proj
-        if custom_grad:
+        if ffn_custom_grad:
             assert type(self.i2h_proj) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
             assert type(self.h2o_proj) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
         assert self.i2h_proj.in_features == self.h2o_proj.out_features == hidden_size
@@ -61,10 +61,10 @@ class LeanFFN(nn.Module):
         self.gated = gated
         self.dropout = dropout
         self.residual = residual
-        self.custom_grad = custom_grad
+        self.ffn_custom_grad = ffn_custom_grad
 
     def forward(self, input):
-        return self._forward_custom(input) if self.custom_grad else self._forward_pytorch(input)
+        return self._forward_custom(input) if self.ffn_custom_grad else self._forward_pytorch(input)
 
     def _forward_pytorch(self, input):
         input_2d = input.view(-1, input.shape[-1])

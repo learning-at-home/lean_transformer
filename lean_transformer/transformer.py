@@ -140,11 +140,11 @@ class LeanTransformer(nn.Module):
             if checkpoint_attention_core is not None and isinstance(module, LeanSelfAttention):
                 module.checkpoint_attention_core = checkpoint_attention_core
             elif ffn_custom_grad is not None and isinstance(module, LeanFFN):
-                module.custom_grad = ffn_custom_grad
+                module.ffn_custom_grad = ffn_custom_grad
             else:
                 # if this fails, you need to make sure that optimizations are propagated to new layers
-                assert not hasattr(module, "checkpoint_attention_core")
-                assert not hasattr(module, "custom_grad")
+                assert checkpoint_attention_core is None or not hasattr(module, "checkpoint_attention_core"), module
+                assert ffn_custom_grad is None or not hasattr(module, "ffn_custom_grad"), module
 
         if update_triton_blocksparse_ops:
             for module in self.modules():

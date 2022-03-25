@@ -190,7 +190,7 @@ def test_ffn_shared(adapter_dim: int, lowrank_dim: int, block_size: int, residua
         i2h_proj=GeneralizedLinear(GeneralizedMatrix(dim, 8 * dim, layout, lowrank_dim), adapter_dim),
         h2o_proj=GeneralizedLinear(GeneralizedMatrix(4 * dim, dim, layout, lowrank_dim), adapter_dim),
         residual=residual,
-        custom_grad=custom_grad,
+        ffn_custom_grad=custom_grad,
     )
     with torch.no_grad():
         baseline_ffn.post_layer_norm.bias[...] = torch.randn_like(baseline_ffn.post_layer_norm.bias)
