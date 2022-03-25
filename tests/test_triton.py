@@ -33,7 +33,7 @@ def test_triton_linear():
         pytest.skip("This test requires GPU")
 
     layer = GeneralizedLinear(
-        GeneralizedMatrix(512, 1536, blocksparse_layout="pixelfly(32)", blocksparse_backend=True,
+        GeneralizedMatrix(512, 1536, blocksparse_layout="pixelfly(32)", blocksparse_backend='triton',
                           lowrank_dim=32)
     ).cuda()
 
@@ -57,6 +57,7 @@ def test_triton_linear():
     assert torch.allclose(grad_input, input.grad, rtol=0, atol=1e-6)
     for (param_name, param), our_grad in zip(layer.named_parameters(), grad_params):
         assert torch.allclose(param.grad, our_grad, rtol=0, atol=1e-6), param_name
+
 
 @pytest.mark.forked
 def test_triton_ffn_transformer():
