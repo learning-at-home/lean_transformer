@@ -284,7 +284,7 @@ class _GeneralizedLinear(torch.autograd.Function):
             assert lowrank_second is not None
             grad_lowrank_second = torch.matmul(grad_output_flat_transposed, lowrank_hid_flat)
             # ^-- [out_features, lowrank_dim]
-        if needs_input_grad[3]:
+        if lowrank_first is not None and (needs_input_grad[0] or needs_input_grad[3]):
             grad_lowrank_hid_flat_transposed = grad_lowrank_hid_flat.t()  # [lowrank_dim, etc]
             grad_lowrank_first = torch.matmul(grad_lowrank_hid_flat_transposed, input_flat)
             # ^-- [lowrank_dim, in_features]
