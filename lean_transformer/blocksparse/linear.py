@@ -20,14 +20,14 @@ class GeneralizedMatrix(nn.Module):
     """A module that stores a shared pytorch tensor for use in GeneralizedLinear layers"""
 
     def __init__(self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None,
-                 lowrank_dim: int = 0, use_triton: bool = False):
+                 lowrank_dim: int = 0, blocksparse_backend: str = 'native'):
         super().__init__()
         self.out_features, self.in_features = out_features, in_features
-        self.use_triton = use_triton
+        self.blocksparse_backend = blocksparse_backend
         self._triton_matmul_op = None
 
         if blocksparse_layout is None:
-            assert not use_triton, "triton is only used for block-sparse matrices"
+            assert not blocksparse_backend, "triton is only used for block-sparse matrices"
             # fully-connected weight matrix
             self.weight = nn.Parameter(torch.empty(out_features, in_features))
             nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
@@ -40,17 +40,19 @@ class GeneralizedMatrix(nn.Module):
             block_size = in_features // layout.shape[1]
             self.register_buffer("layout", layout, persistent=True)
 
-            if use_triton:
-                self.weight = nn.Parameter(torch.empty(1, self.layout.sum().item(), block_size, block_size))
-                self.forward_indices = self.backward_indices = None
-                # note: we do not initialize triton op until forward pass in case user decides to change layout
-            else:
+            if blocksparse_backend == 'native':
                 # native backend
                 forward_indices, backward_indices = get_indices_from_layout(layout)
                 self.register_buffer("forward_indices", forward_indices, persistent=True)
                 self.register_buffer("backward_indices", backward_indices, persistent=True)
                 active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
                 self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
+            elif blocksparse_backend == 'triton':
+                self.weight = nn.Parameter(torch.empty(1, self.layout.sum().item(), block_size, block_size))
+                self.forward_indices = self.backward_indices = None
+                # note: we do not initialize triton op until forward pass in case user decides to change layout
+            else:
+                raise NotImplementedError(f"Unrecognized sparsity backend: {blocksparse_backend}")
 
             torch.nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
             # note: this init is usually overwritten by the model-wide init
@@ -91,7 +93,7 @@ class GeneralizedMatrix(nn.Module):
 
     @property
     def matmul_op(self) -> Optional[TritonMatmulForLinearLayer]:
-        if not self.use_triton:
+        if not self.blocksparse_backend:
             return None
         if self._triton_matmul_op is None:
             if self.weight.ndim != 4 or self.weight.shape[0] != 1 or self.weight.shape[-1] != self.weight.shape[-2]:

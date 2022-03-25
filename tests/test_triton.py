@@ -1,5 +1,7 @@
 import pytest
 import torch
+
+from lean_transformer import LeanTransformer, LeanTransformerConfig
 from lean_transformer.blocksparse import GeneralizedLinear, GeneralizedMatrix
 from lean_transformer.blocksparse import TritonMatmulForLinearLayer, get_blocksparse_layout
 
@@ -31,7 +33,7 @@ def test_triton_linear():
         pytest.skip("This test requires GPU")
 
     layer = GeneralizedLinear(
-        GeneralizedMatrix(512, 1536, blocksparse_layout="pixelfly(32)", use_triton=True,
+        GeneralizedMatrix(512, 1536, blocksparse_layout="pixelfly(32)", blocksparse_backend=True,
                           lowrank_dim=32)
     ).cuda()
 
@@ -55,3 +57,38 @@ def test_triton_linear():
     assert torch.allclose(grad_input, input.grad, rtol=0, atol=1e-6)
     for (param_name, param), our_grad in zip(layer.named_parameters(), grad_params):
         assert torch.allclose(param.grad, our_grad, rtol=0, atol=1e-6), param_name
+
+@pytest.mark.forked
+def test_triton_ffn_transformer():
+    model = LeanTransformer(LeanTransformerConfig(
+        hidden_size=1024, num_hidden_layers=8, lowrank_dim=0,
+        weight_layout="hypercube(32, folded=True)", blocksparse_backend='triton',
+    ))
+
+    model = model.cuda()
+    input_embs = torch.randn(2, 8, 1024, device='cuda', requires_grad=True)
+    mask = (torch.tensor([[1] * 8, [1] * 5 + [0] * 3], device='cuda')[:, None, None, :] - 1) * 1e6
+    z = torch.randn(1024, device='cuda')
+
+    model.zero_grad()
+    model.set_optimizations(ffn_custom_grad=False)
+    hidden = model(input_embs, mask).last_hidden_state
+    (hidden @ z).sum().backward()
+
+    hidden_ref = hidden.clone()
+    grads_ref = [p.grad.clone() for p in model.parameters()]
+    grad_input_embs_ref = input_embs.grad.clone()
+
+    input_embs.grad.zero_()
+    model.zero_grad()
+    model.set_optimizations(ffn_custom_grad=True)
+    hidden = model(input_embs, mask).last_hidden_state
+    (hidden @ z).sum().backward()
+
+    hidden_custom = hidden.clone()
+
+    assert torch.allclose(hidden, hidden_custom, rtol=0, atol=1e-6)
+    assert torch.allclose(grad_input_embs_ref, input_embs.grad, rtol=0, atol=1e-6)
+
+    for (name, param), grad_ref in zip(model.named_parameters(), grads_ref):
+        assert torch.allclose(grad_ref, param.grad, rtol=0, atol=1e-6), name
