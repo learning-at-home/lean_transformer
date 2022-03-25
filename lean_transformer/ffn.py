@@ -269,7 +269,7 @@ class _LeanFFN(torch.autograd.Function):
 
             with torch.no_grad():
                 (grad_hid_act, grad_h2o_weight, grad_h2o_bias, grad_h2o_lowrank_first, grad_h2o_lowrank_second,
-                 unused_grad_forward_indices, unused_grad_backward_indices) = \
+                 unused_grad_forward_indices, unused_grad_backward_indices, unused_grad_matmul_op) = \
                     _LeanFFN._h2o_backward(ctx, grad_h2o_output_2d, hid_act)
 
             (grad_hid,) = torch.autograd.grad(hid_act, pre_activation, grad_outputs=grad_hid_act)
@@ -284,7 +284,7 @@ class _LeanFFN(torch.autograd.Function):
 
             with torch.no_grad():
                 (grad_input_ln_2d, grad_i2h_weight, grad_i2h_bias, grad_i2h_lowrank_first, grad_i2h_lowrank_second,
-                 unused_grad_forward_indices, unused_grad_backward_indices) = \
+                 unused_grad_forward_indices, unused_grad_backward_indices, unused_grad_matmul_op) = \
                     _LeanFFN._i2h_backward(ctx, grad_hid, input_ln_2d)
 
             if any(ctx.needs_input_grad[0:3]):
