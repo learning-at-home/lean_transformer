@@ -53,14 +53,17 @@ def test_triton_linear():
     ref_out = layer.matrix(input) + layer.bias
     (ref_out * vec).sum().backward()
 
-    assert torch.allclose(out, ref_out, rtol=0, atol=1e-6)
-    assert torch.allclose(grad_input, input.grad, rtol=0, atol=1e-6)
+    assert torch.allclose(out, ref_out, rtol=0, atol=1e-5)
+    assert torch.allclose(grad_input, input.grad, rtol=0, atol=1e-5)
     for (param_name, param), our_grad in zip(layer.named_parameters(), grad_params):
-        assert torch.allclose(param.grad, our_grad, rtol=0, atol=1e-6), param_name
+        assert torch.allclose(param.grad, our_grad, rtol=0, atol=1e-5), param_name
 
 
 @pytest.mark.forked
 def test_triton_ffn_transformer():
+    if not torch.cuda.is_available():
+        pytest.skip("This test requires GPU")
+
     model = LeanTransformer(LeanTransformerConfig(
         hidden_size=1024, num_hidden_layers=8, lowrank_dim=0,
         weight_layout="hypercube(32, folded=True)", blocksparse_backend='triton',
