@@ -60,7 +60,7 @@ def test_triton_linear():
 
 
 @pytest.mark.forked
-@pytest.mark.parameterize("autocast, atol", [(False, 1e-6), (True, 0.05)])
+@pytest.mark.parametrize("autocast, atol", [(False, 1e-6), (True, 0.05)])
 def test_triton_ffn_transformer(autocast: bool = False, atol: float = 1e-5):
     if not torch.cuda.is_available():
         pytest.skip("This test requires GPU")
