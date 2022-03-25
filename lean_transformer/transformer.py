@@ -95,6 +95,7 @@ class LeanTransformer(nn.Module):
             checkpoint_attention_core: Optional[bool] = None,
             ffn_custom_grad: Optional[bool] = None,
             update_triton_blocksparse_ops: bool = False,
+            batched_attention_size: Optional[int] = None
     ):
         """
         Set one or more memory saving options for all compatible sub-modules. Options set to None remain unchanged.
@@ -137,8 +138,11 @@ class LeanTransformer(nn.Module):
                 sequential.preserve_rng_state = preserve_rng_state
 
         for module in sequential.modules():
-            if checkpoint_attention_core is not None and isinstance(module, LeanSelfAttention):
-                module.checkpoint_attention_core = checkpoint_attention_core
+            if isinstance(module, LeanSelfAttention):
+                if checkpoint_attention_core is not None:
+                    module.checkpoint_attention_core = checkpoint_attention_core
+                if batched_attention_size is not None:
+                    module.attention_core.batched_attention_size = batched_attention_size
             elif ffn_custom_grad is not None and isinstance(module, LeanFFN):
                 module.ffn_custom_grad = ffn_custom_grad
             else:

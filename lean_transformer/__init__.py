@@ -1,5 +1,5 @@
 from .ffn import LeanFFN
-from .attn import LeanSelfAttention, SimpleAttentionCore, RotaryAttentionCore, BatchStepAttentionCore
+from .attn import LeanSelfAttention, SimpleAttentionCore, RotaryAttentionCore
 from .rotary import RotaryEmbeddings, rotate
 from .sequence import SequentialWithKwargs, ReversibleWithKwargs, ActiveKwargs
 from .config import LeanTransformerConfig

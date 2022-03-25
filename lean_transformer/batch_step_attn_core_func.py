@@ -12,7 +12,8 @@ class BatchStepAttnCoreFunc(torch.autograd.Function):
         loop_batch_step,
         queries,
         keys,
-        values
+        values,
+        attention_mask
     ):
         num_seqs = keys.size(0)
         seq_len = keys.size(1)
@@ -45,6 +46,9 @@ class BatchStepAttnCoreFunc(torch.autograd.Function):
                 keys[ibatch_range[0]:ibatch_range[1], :, :].transpose(1, 2)
             ) * scale_t
 
+            if attention_mask is not None:
+                matmul1_results += attention_mask[:, 0, :, :]
+
             # output:           [batch, seql_q, seql_k]
             softmax_results = F.softmax(matmul1_results, dim=-1)
 
@@ -63,7 +67,8 @@ class BatchStepAttnCoreFunc(torch.autograd.Function):
             hidden_dim_t,
             queries,
             keys,
-            values
+            values,
+            attention_mask
         )
 
         return outputs.detach()
@@ -79,7 +84,8 @@ class BatchStepAttnCoreFunc(torch.autograd.Function):
             hidden_dim_t,
             queries,
             keys,
-            values
+            values,
+            attention_mask
         ) = ctx.saved_tensors
 
         heads = heads_t[0].item()
@@ -108,6 +114,9 @@ class BatchStepAttnCoreFunc(torch.autograd.Function):
                 queries[ibatch_range[0]:ibatch_range[1], :, :],
                 keys[ibatch_range[0]:ibatch_range[1], :, :].transpose(1, 2)
             ) * scale_t
+
+            if attention_mask is not None:
+                matmul1_results += attention_mask[:, 0, :, :]
 
             # output:           [seqs*heads, seql_q, seql_k]
             softmax_results = F.softmax(matmul1_results, dim=-1)
@@ -157,6 +166,7 @@ class BatchStepAttnCoreFunc(torch.autograd.Function):
             queries_grads,  # queries
             keys_grads,     # keys
             values_grads,   # values
+            None,  # attention_mask
         )
 
 
