@@ -182,6 +182,9 @@ class LeanGPTHead(nn.Module):
     def get_logits_weight(self) -> torch.Tensor:
         return self.logits_weight if self.logits_weight is not None else self.embeddings.word_embeddings.weight
 
+    def get_logits_bias(self) -> torch.Tensor:
+        return self.logits_bias
+
 
 class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
     config_class = LeanGPTConfig
@@ -208,6 +211,9 @@ class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
                                                             device=prev_bias.device, layout=prev_bias.layout))
         with torch.no_grad():
             self.lm_head.logits_bias[:intersection_size] = prev_bias[:intersection_size]
+
+    def get_output_embeddings(self) -> LeanGPTHead:
+        return self.lm_head
 
     def _init_weights(self, module: nn.Module):
         return self.config.init_weights(module)
