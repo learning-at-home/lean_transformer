@@ -32,6 +32,8 @@ _TOKENIZER_FOR_DOC = "AlbertTokenizer"
 
 
 class LeanAlbertConfig(LeanTransformerConfig):
+    model_type = "lean_albert"
+
     def __init__(
         self,
         *args,

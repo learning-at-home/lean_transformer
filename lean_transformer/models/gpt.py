@@ -32,6 +32,8 @@ _TOKENIZER_FOR_DOC = "GPT2Tokenizer"
 
 
 class LeanGPTConfig(LeanTransformerConfig):
+    model_type = "lean_gpt"
+
     def __init__(
         self,
         *args,
