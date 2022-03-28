@@ -156,19 +156,23 @@ class LeanGPTHead(nn.Module):
                 embedding_hidden_mapping_t = self.embeddings.embedding_hidden_mapping.weight.detach().t()
                 self.hidden_embedding_mapping = nn.Parameter(embedding_hidden_mapping_t.clone().contiguous())
 
-        self.layer_norm = nn.LayerNorm(config.embedding_size)
-        self.activation = config.get_activation_callable() if config.lm_head_nonlinear else None
+            self.layer_norm = nn.LayerNorm(config.embedding_size)
+            self.activation = config.get_activation_callable() if config.lm_head_nonlinear else None
+        else:
+            assert config.lm_head_nonlinear
         if not config.tie_word_embeddings:
-            embeddings = self.embeddings.word_embeddings.weight
-            self.logits_weight = nn.Parameter(embeddings.data.detach().clone())
+            embeddings = self.embeddings.word_embeddings.weight.data.detach()
+            self.logits_weight = nn.Parameter(
+                (embeddings - embeddings.mean()) / embeddings.std() * config.initializer_range
+            )
 
         self.logits_bias = nn.Parameter(torch.zeros(config.vocab_size))
 
     def forward(self, hidden_states):
-        if self.hidden_bias is not None:
+        if self.hidden_embedding_mapping is not None:
             hidden_states = F.linear(input=hidden_states, weight=self.get_hidden_mapping(), bias=self.hidden_bias)
-        hidden_states = self.activation(hidden_states) if self.activation is not None else hidden_states
-        hidden_states = self.layer_norm(hidden_states)
+            hidden_states = self.activation(hidden_states) if self.activation is not None else hidden_states
+            hidden_states = self.layer_norm(hidden_states)
         logits = F.linear(input=hidden_states, weight=self.get_logits_weight(), bias=self.logits_bias)
         return logits
 
