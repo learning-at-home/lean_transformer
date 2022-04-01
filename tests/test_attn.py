@@ -9,7 +9,7 @@ from lean_transformer.attn import LeanSelfAttention
 
 
 @pytest.mark.forked
-def test_lean_attn():
+def test_lean_attn(rotary: bool = False):
     torch.use_deterministic_algorithms(True)
 
     seq_length = 64
