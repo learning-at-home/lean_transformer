@@ -213,7 +213,9 @@ class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
         with torch.no_grad():
             self.lm_head.logits_bias[:intersection_size] = prev_bias[:intersection_size]
 
-    def get_output_embeddings(self) -> nn.Linear:
+    def get_output_embeddings(self) -> Optional[nn.Linear]:
+        if self.config.tie_word_embeddings:
+            return None
         makeshift_linear = nn.Linear(0, 0)
         makeshift_linear.weight, makeshift_linear.bias = self.lm_head.logits_weight, self.lm_head.logits_bias
         makeshift_linear.out_features, makeshift_linear.in_features = makeshift_linear.weight.shape
