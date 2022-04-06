@@ -183,8 +183,6 @@ class _GeneralizedLinear(torch.autograd.Function):
 
             # check if we can re-materialize tensors during backward
             assert len(tensors_to_save) == 2
-            assert tensors_to_save[0].data_ptr() == input_padded.data_ptr()
-            assert tensors_to_save[1] is main_weight
             extra_args = (None, None, matmul_output.flatten(0, -2))
 
         output, *tensors_to_save = _GeneralizedLinear._forward_jit(
