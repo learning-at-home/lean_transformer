@@ -127,4 +127,4 @@ class MomentumReversibleWithKwargs(ReversibleSequential):
         inp0 = input.to(torch.float32)  # enforce upcasting residuals to fp32
         inp1 = zeros = torch.zeros_like(inp0)
         out0, out1 = self.replace_grad(*self.stem((inp0, inp1, zeros, zeros), *args, **kwargs))
-        return out1
+        return out0
