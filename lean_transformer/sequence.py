@@ -133,7 +133,7 @@ class MomentumReversibleWithKwargs(ReversibleSequential):
 
 class MeanReversibleWithKwargs(ReversibleSequential):
     def __init__(self, *modules, **kwargs):
-        logger.warning("Current momentum net implementation is a hack, plz rewrite if it ends up working")
+        logger.warning("USING MEAN REVERSIBLE!!! THIS IS A DEBUG MESSAGE")
         momentum_modules, coupling_forward, coupling_inverse = [], [], []
         for idx, module in enumerate(modules):
             assert isinstance(module, ActiveKwargs) or (
