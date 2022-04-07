@@ -8,7 +8,8 @@ from transformers.modeling_outputs import BaseModelOutput
 
 from lean_transformer import LeanFFN, LeanSelfAttention
 from lean_transformer.config import LeanTransformerConfig
-from lean_transformer.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
+from lean_transformer.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs, \
+    MomentumReversibleWithKwargs
 from lean_transformer.blocksparse import GeneralizedMatrix
 
 
@@ -30,18 +31,27 @@ class LeanTransformer(nn.Module):
             self.layer_groups.append(nn.ModuleDict(dict(layers=inner_group)))
 
         self.post_layer_norm = nn.LayerNorm(config.hidden_size, config.layer_norm_eps)
-        self._sequential: Tuple[nn.Module, ...] = ()
+        self._sequential: Optional[Tuple[nn.Module]] = None
 
     def _get_sequential(self):
-        if not self._sequential:
+        if self._sequential is None:
             sequence = []
             for i in range(self.config.num_hidden_layers):
                 group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
                 for layer in self.layer_groups[group_idx].layers:
                     sequence.append(ActiveKwargs(layer.attention, ("attention_mask",), use_first_output=True))
                     sequence.append(ActiveKwargs(layer.ffn, active_keys=()))
-            sequential_cls = ReversibleWithKwargs if self.config.reversible else SequentialWithKwargs
-            self._sequential = (sequential_cls(*sequence),)
+
+            if not self.config.reversible:
+                assert self.config.momentum_reversible_beta is None
+                sequence = SequentialWithKwargs(*sequence)
+            elif self.config.reversible and self.config.momentum_reversible_beta is None:
+                sequence = ReversibleWithKwargs(*sequence)
+            elif self.config.reversible and self.config.momentum_reversible_beta is not None:
+                sequence = MomentumReversibleWithKwargs(*sequence, beta=self.config.momentum_reversible_beta)
+            else:
+                raise NotImplementedError("Unexpected configuration for transformer stem.")
+            self._sequential = (sequence,)
         return self._sequential[0]
 
     def _make_attention(self, index: int, config: LeanTransformerConfig):

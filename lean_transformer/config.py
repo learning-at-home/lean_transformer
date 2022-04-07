@@ -83,6 +83,7 @@ class LeanTransformerConfig(PretrainedConfig):
         out_proj_bias: Optional[bool] = None,
         post_layer_norm: bool = False,
         reversible: bool = False,
+        momentum_reversible_beta: Optional[float] = None,
         hidden_dropout_prob: float = 0,
         attention_probs_dropout_prob: float = 0,
         attention_type: str = "simple",
@@ -128,6 +129,9 @@ class LeanTransformerConfig(PretrainedConfig):
         self.out_proj_bias = out_proj_bias if out_proj_bias is not None else not post_layer_norm
         self.post_layer_norm = post_layer_norm
         self.reversible = reversible
+        self.momentum_reversible_beta = momentum_reversible_beta
+        assert momentum_reversible_beta is None or 0 < momentum_reversible_beta < 1, \
+            "Momentum beta should be in (0, 1) range. Set to None to disable."
 
         self.attention_type = attention_type
         self.rotary_embedding_base = rotary_embedding_base

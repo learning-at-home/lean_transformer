@@ -6,8 +6,10 @@ from contextlib import nullcontext
 from typing import Sequence, Union
 
 import torch
+
 from lean_transformer.utils import get_logger
-from revlib import ReversibleModule, ReversibleSequential
+from revlib.core import ReversibleModule, ReversibleSequential
+from revlib.utils import MomentumNetStem, MomentumNetSide
 from torch import nn as nn
 from torch.utils.checkpoint import checkpoint
 
@@ -99,3 +101,30 @@ class ReversibleWithKwargs(ReversibleSequential):
         # out0 = input + g1 + g2 + ... + gn  -- a sum of all even modules plus inputs
         # hence, out0 + out1 - inp1 = input + f1 + g1 + g2 + g2 + ... + fn + gn
         return out0 + out1 - inp1
+
+
+class MomentumReversibleWithKwargs(ReversibleSequential):
+    def __init__(self, *modules, beta: float, **kwargs):
+        logger.warning("Current momentum net implementation is a hack, plz rewrite if it ends up working")
+        momentum_modules = []
+        for idx, module in enumerate(modules):
+            assert isinstance(module, ActiveKwargs) or (
+                    isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
+            )
+            assert not isinstance(module, ReversibleModule)
+            assert type(module) == ActiveKwargs
+            momentum_modules.append(
+                ActiveKwargs(MomentumNetStem(module.module, beta ** idx), module.active_keys, module.use_first_output))
+            momentum_modules.append(ActiveKwargs(MomentumNetSide((1 - beta) / beta ** (idx + 1)), ()))
+
+        super().__init__(*momentum_modules, **kwargs)
+        wrapped_modules = getattr(self, 'stem', [m for m in self.children() if isinstance(m, ReversibleModule)])
+        assert len(wrapped_modules) == 2 * len(modules)
+        self.stem = SequentialWithKwargs(*wrapped_modules)
+        self.beta = beta
+
+    def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        inp0 = input.to(torch.float32)  # enforce upcasting residuals to fp32
+        inp1 = zeros = torch.zeros_like(inp0)
+        out0, out1 = self.replace_grad(*self.stem((inp0, inp1, zeros, zeros), *args, **kwargs))
+        return out1
