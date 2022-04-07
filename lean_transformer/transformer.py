@@ -9,7 +9,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from lean_transformer import LeanFFN, LeanSelfAttention
 from lean_transformer.config import LeanTransformerConfig
 from lean_transformer.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs, \
-    MomentumReversibleWithKwargs
+    MomentumReversibleWithKwargs, MeanReversibleWithKwargs
 from lean_transformer.blocksparse import GeneralizedMatrix
 
 
@@ -45,10 +45,8 @@ class LeanTransformer(nn.Module):
             if not self.config.reversible:
                 assert self.config.momentum_reversible_beta is None
                 sequence = SequentialWithKwargs(*sequence)
-            elif self.config.reversible and self.config.momentum_reversible_beta is None:
-                sequence = ReversibleWithKwargs(*sequence)
-            elif self.config.reversible and self.config.momentum_reversible_beta is not None:
-                sequence = MomentumReversibleWithKwargs(*sequence, beta=self.config.momentum_reversible_beta)
+            elif self.config.reversible:
+                sequence = MeanReversibleWithKwargs(*sequence)
             else:
                 raise NotImplementedError("Unexpected configuration for transformer stem.")
             self._sequential = (sequence,)

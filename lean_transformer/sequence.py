@@ -5,6 +5,7 @@ When using gradient checkpoints or reversible sequential, keyword arguments shou
 from contextlib import nullcontext
 from typing import Sequence, Union
 
+import revlib
 import torch
 
 from lean_transformer.utils import get_logger
@@ -128,3 +129,49 @@ class MomentumReversibleWithKwargs(ReversibleSequential):
         inp1 = zeros = torch.zeros_like(inp0)
         out0, out1 = self.replace_grad(*self.stem((inp0, inp1, zeros, zeros), *args, **kwargs))
         return out0
+
+
+class MeanReversibleWithKwargs(ReversibleSequential):
+    def __init__(self, *modules, **kwargs):
+        logger.warning("Current momentum net implementation is a hack, plz rewrite if it ends up working")
+        momentum_modules, coupling_forward, coupling_inverse = [], [], []
+        for idx, module in enumerate(modules):
+            assert isinstance(module, ActiveKwargs) or (
+                    isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
+            )
+            coupling = MeanCoupling(idx + 1)
+            momentum_modules.extend((module, ActiveKwargs(Identity(), ())))
+            coupling_forward.extend((coupling.forward, revlib.additive_coupling_forward))
+            coupling_inverse.extend((coupling.inverse, revlib.additive_coupling_inverse))
+
+        super().__init__(
+            *momentum_modules, coupling_forward=coupling_forward, coupling_inverse=coupling_inverse, **kwargs)
+        wrapped_modules = getattr(self, 'stem', [m for m in self.children() if isinstance(m, ReversibleModule)])
+        assert len(wrapped_modules) == 2 * len(modules)
+        self.stem = SequentialWithKwargs(*wrapped_modules)
+
+    def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        inp0 = inp1 = input.to(torch.float32)  # enforce upcasting residuals to fp32
+        zeros = torch.zeros_like(inp0)
+        out0, out1 = self.replace_grad(*self.stem((inp0, inp1, zeros, zeros), *args, **kwargs))
+        return out0
+
+
+class Identity(nn.Module):
+    def forward(self, input, *args, **kwargs):
+        return input
+
+
+class MeanCoupling:
+    # TODO jit-script!
+    def __init__(self, layer_index: int):
+        assert layer_index > 0, "layer with index zero must be applied before reversible (e.g. embeddings)"
+        self.layer_index = layer_index
+
+    def forward(self, other_stream: torch.Tensor, fn_out: torch.Tensor) -> torch.Tensor:
+        i = self.layer_index
+        return other_stream * (i / (i + 1)) + fn_out * (1 / (i + 1))
+
+    def inverse(self, forward_output: torch.Tensor, fn_out: torch.Tensor) -> torch.Tensor:
+        i = self.layer_index
+        return (forward_output - fn_out * (1 / (i + 1))) / (i / (i + 1))
