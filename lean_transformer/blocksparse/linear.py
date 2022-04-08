@@ -96,10 +96,10 @@ class GeneralizedMatrix(nn.Module):
         if adjust_for_sparsity:
             density = self.weight.numel() / (self.out_features * self.in_features)
             main_std = main_std / density ** 0.5
+            print("!!INIT DEBUGPRINT:", min(self.out_features, self.in_features), range, density, main_std)
         self.weight.data.normal_(mean=0.0, std=main_std)
-
         if self.lowrank_first is not None:
-            nn.init.normal_(self.lowrank_first, std=range ** 0.5)
+            nn.init.normal_(self.lowrank_first, std=range)
             nn.init.zeros_(self.lowrank_second)
 
     @property
