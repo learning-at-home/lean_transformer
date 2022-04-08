@@ -7,7 +7,8 @@ import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.utils.checkpoint import get_device_states, set_device_states
 
-from lean_transformer.blocksparse.linear import GeneralizedLinear, _GeneralizedLinear, TritonMatmulForLinearLayer
+from lean_transformer.blocksparse.linear import GeneralizedLinear, _GeneralizedLinear, TritonMatmulForLinearLayer, \
+    AMP_DTYPE
 from lean_transformer.utils import ACT2FN
 
 
@@ -182,6 +183,11 @@ class _LeanFFN(torch.autograd.Function):
         input_2d = input.view(-1, input.shape[-1])
 
         input_ln = F.layer_norm(input_2d, input.shape[-1:], ln_weight, ln_bias, ln_eps)
+        if torch.is_autocast_enabled():
+            input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second = (
+                x.to(AMP_DTYPE) if x is not None else None
+                for x in (input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second)
+            )
 
         pre_activation, i2h_tensors = _GeneralizedLinear.forward_functional(
             input_ln, i2h_weight, i2h_bias, i2h_lowrank_first, i2h_lowrank_second,
@@ -189,6 +195,12 @@ class _LeanFFN(torch.autograd.Function):
         )
 
         hid_act = _LeanFFN._apply_activation(pre_activation, ctx._activation, ctx._gated)
+
+        if torch.is_autocast_enabled():
+            hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second = (
+                x.to(AMP_DTYPE) if x is not None else None
+                for x in (hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second)
+            )
 
         out, h2o_tensors = _GeneralizedLinear.forward_functional(
             hid_act, h2o_weight, h2o_bias, h2o_lowrank_first, h2o_lowrank_second,
@@ -218,15 +230,19 @@ class _LeanFFN(torch.autograd.Function):
 
     @staticmethod
     def _h2o_backward(ctx, grad_output: torch.Tensor, hid_act: torch.Tensor):
+        if torch.is_autocast_enabled():
+            grad_output, hid_act = grad_output.to(AMP_DTYPE), hid_act.to(AMP_DTYPE)
         saved_tensors = (hid_act, *ctx.saved_tensors[-ctx._num_h2o_tensors + 1 :])
-        needs_input_grad = [hid_act.requires_grad, *ctx.needs_input_grad[10:17]]
+        needs_input_grad = [any(ctx.needs_input_grad[:10]), *ctx.needs_input_grad[10:17]]
         grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad, ctx._h2o_matmul_op)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 
     @staticmethod
     def _i2h_backward(ctx, grad_output: torch.Tensor, input_ln: torch.Tensor):
+        if torch.is_autocast_enabled():
+            grad_output, input_ln = grad_output.to(AMP_DTYPE), input_ln.to(AMP_DTYPE)
         saved_tensors = (input_ln, *ctx.saved_tensors[-ctx._num_i2h_tensors - ctx._num_h2o_tensors + 2 : -ctx._num_h2o_tensors + 1])
-        needs_input_grad = [input_ln.requires_grad, *ctx.needs_input_grad[3:10]]
+        needs_input_grad = [any(ctx.needs_input_grad[:3]), *ctx.needs_input_grad[3:10]]
         grads = _GeneralizedLinear.backward_functional(grad_output, saved_tensors, needs_input_grad, ctx._i2h_matmul_op)
         return tuple(grad if needed else None for grad, needed in zip_longest(grads, needs_input_grad))
 

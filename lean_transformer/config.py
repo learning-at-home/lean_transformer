@@ -57,6 +57,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
     :param initializer_range: standard deviation for gaussian noise used when initializing weight matrices, defaults
      to SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2) = sqrt(2 / (5 * hidden_size))
+    :param initializer_adjust_sparse: if True, scale initializer range for sparse matrices by 1/sqrt(density)
     :note: the initialized range is **not** applied by default, it requires calling model.apply(model.init_weights)!
 
     :param kwargs: additional keyword arguments used by base PretrainedModel in huggingface transformers
@@ -89,6 +90,7 @@ class LeanTransformerConfig(PretrainedConfig):
         layer_norm_eps: float = 1e-12,
         rotary_embedding_base: int = 10_000,
         initializer_range: Optional[float] = None,
+        initializer_adjust_sparse: bool = True,
         **kwargs,
     ):
         if "sandwich_norm" in kwargs:
@@ -139,6 +141,7 @@ class LeanTransformerConfig(PretrainedConfig):
             initializer_range = math.sqrt(2 / (5 * self.hidden_size))
             # note: this default values is based on SmallInit (see https://arxiv.org/pdf/1910.05895.pdf section 2.2)
         self.initializer_range = initializer_range
+        self.initializer_adjust_sparse = initializer_adjust_sparse
 
     def __hash__(self):
         return hash("\t".join(f"{k}={v}" for k, v in self.__dict__.items() if not k.startswith("_")))
@@ -210,7 +213,7 @@ class LeanTransformerConfig(PretrainedConfig):
     def init_weights(self, module: nn.Module):
         """Initialize the weights."""
         if isinstance(module, GeneralizedMatrix):
-            module.weight.data.normal_(mean=0.0, std=self.initializer_range)
+            module.initialize_(self.initializer_range, adjust_for_sparsity=self.initializer_adjust_sparse)
         elif isinstance(module, GeneralizedLinear):
             if module.bias is not None:
                 module.bias.data.zero_()
