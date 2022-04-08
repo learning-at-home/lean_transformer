@@ -82,6 +82,16 @@ class SequentialWithKwargs(nn.Sequential):
 
 class ReversibleWithKwargs(ReversibleSequential):
     def __init__(self, *modules, **kwargs):
+        logger.warning("Using experimental AABB reorder!")
+        modules_a, modules_b = [], []
+        for i, m in enumerate(modules):
+            (modules_a if i % 2 == 0 else modules_b).append(m)
+
+        modules = []
+        for i in range(len(modules_a) // 2):
+            modules.extend(modules_a[2 * i: 2 * i + 2])
+            modules.extend(modules_b[2 * i: 2 * i + 2])
+
         for module in modules:
             assert isinstance(module, ActiveKwargs) or (
                 isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
