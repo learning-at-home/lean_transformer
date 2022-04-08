@@ -8,6 +8,8 @@ import torch
 
 from lean_transformer.utils import get_logger
 
+from igraph import Graph
+
 logger = get_logger(__name__)
 REGISTERED_LAYOUTS = dict()
 
@@ -144,6 +146,31 @@ def get_hypercube_layout(
             assert not layout[block_index, opposite_index].item()
             layout[block_index, opposite_index] = True
 
+    if stretch:
+        layout = layout[:, None, :, None].repeat(
+            1, out_features // smaller_features, 1, in_features // smaller_features
+        ).flatten(-2, -1).flatten(0, 1)
+    else:
+        layout = layout.repeat(out_features // smaller_features, in_features // smaller_features)
+    return layout
+
+
+@register_blocksparse_layout("kautz")
+def get_kautz_layout(
+        out_features: int, in_features: int, block_size: int, m: int, n: int, diagonal = True, stretch: bool = False):
+    """
+    [(see https://tinyurl.com/hypercube-pixelfly)
+    :param folded: add an extra edge connecting the farthest nodes (see https://en.wikipedia.org/wiki/Folded_cube_graph)
+      This slightly decreases compute but significantly reduces the graph diameter.
+    """
+    smaller_features = min(out_features, in_features)
+
+    assert out_features % smaller_features == 0 and in_features % smaller_features == 0
+    graph = Graph.Kautz(m, n)
+    layout = torch.tensor(list(graph.get_adjacency()))
+    assert smaller_features == layout.shape[0]*block_size
+    if diagonal:
+        layout += torch.eye(layout.shape[0], dtype=torch.bool)
     if stretch:
         layout = layout[:, None, :, None].repeat(
             1, out_features // smaller_features, 1, in_features // smaller_features
