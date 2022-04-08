@@ -47,8 +47,6 @@ class LeanTransformer(nn.Module):
                 sequence = SequentialWithKwargs(*sequence)
             elif self.config.reversible and self.config.momentum_reversible_beta is None:
                 sequence = ReversibleWithKwargs(*sequence)
-            elif self.config.reversible and self.config.momentum_reversible_beta is not None:
-                sequence = MomentumReversibleWithKwargs(*sequence, beta=self.config.momentum_reversible_beta)
             else:
                 raise NotImplementedError("Unexpected configuration for transformer stem.")
             self._sequential = (sequence,)
