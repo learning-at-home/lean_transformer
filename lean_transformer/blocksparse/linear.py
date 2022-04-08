@@ -152,16 +152,18 @@ class GeneralizedLinear(nn.Linear):
 class _GeneralizedLinear(torch.autograd.Function):
     @staticmethod
     @custom_fwd
-    def forward(ctx, *args):
-        output, tensors_to_save = _GeneralizedLinear.forward_functional(*args)
+    def forward(ctx, input: torch.Tensor, main_weight: torch.Tensor, *args):
+        if torch.is_autocast_enabled():
+            input, main_weight = input.to(torch.float16), main_weight.to(torch.float16)
+        output, tensors_to_save = _GeneralizedLinear.forward_functional(input, main_weight, *args)
         ctx.save_for_backward(*tensors_to_save)
         ctx._matmul_op = args[-1]
         return output
 
     @staticmethod
     def forward_functional(
-            input: torch.FloatTensor,
-            main_weight: torch.FloatTensor,
+            input: torch.Tensor,
+            main_weight: torch.Tensor,
             bias: Optional[torch.Tensor] = None,
             lowrank_first: Optional[torch.Tensor] = None,
             lowrank_second: Optional[torch.Tensor] = None,
@@ -170,6 +172,7 @@ class _GeneralizedLinear(torch.autograd.Function):
             matmul_op: Optional[TritonMatmulForLinearLayer] = None
     ):
         """pure functional interface for use in other autograd functions"""
+
         if matmul_op is None:
             # matmul using pure pytorch, fused into _forward_jit
             extra_args = (forward_indices, backward_indices, None)
@@ -177,13 +180,14 @@ class _GeneralizedLinear(torch.autograd.Function):
             # matmul using triton backend (or similar), can't be jit-compiled
             input_flat = input.flatten(0, -2)
             input_padded = pad_to_multiple(input_flat, TRITON_PAD_TO, dims=0)[None, None, ...]
+            assert input.dtype == input_padded.dtype == main_weight.dtype
             matmul_output, tensors_to_save = matmul_op.forward_functional(input_padded, main_weight)
             matmul_output = matmul_output.view(matmul_output.shape[2:])
             matmul_output = matmul_output[:len(input_flat)].view(*input.shape[:-1], -1)
 
             # check if we can re-materialize tensors during backward
             assert len(tensors_to_save) == 2
-            assert tensors_to_save[0].data_ptr() == input_padded.data_ptr()
+            assert tensors_to_save[0].dtype == input_padded.dtype and tensors_to_save[0].shape == input_padded.shape
             assert tensors_to_save[1] is main_weight
             extra_args = (None, None, matmul_output.flatten(0, -2))
 
