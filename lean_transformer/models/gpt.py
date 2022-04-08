@@ -169,8 +169,8 @@ class LeanGPTHead(nn.Module):
         self.logits_bias = nn.Parameter(torch.zeros(config.vocab_size))
 
     def forward(self, hidden_states):
-        hidden_embedding_mapping = self.get_hidden_mapping()
-        if hidden_embedding_mapping is not None:
+        if self.hidden_bias is not None:
+            hidden_embedding_mapping = self.get_hidden_mapping()
             hidden_states = F.linear(input=hidden_states, weight=hidden_embedding_mapping, bias=self.hidden_bias)
             hidden_states = self.activation(hidden_states) if self.activation is not None else hidden_states
             hidden_states = self.layer_norm(hidden_states)
