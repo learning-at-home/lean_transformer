@@ -159,9 +159,8 @@ def get_hypercube_layout(
 def get_kautz_layout(
         out_features: int, in_features: int, block_size: int, m: int, n: int, diagonal = True, stretch: bool = False):
     """
-    [(see https://tinyurl.com/hypercube-pixelfly)
-    :param folded: add an extra edge connecting the farthest nodes (see https://en.wikipedia.org/wiki/Folded_cube_graph)
-      This slightly decreases compute but significantly reduces the graph diameter.
+    A layout that uses Kautz graph (see https://en.wikipedia.org/wiki/Kautz_graph)
+    :param diagonal: add an extra edge connecting each node with itself.
     """
     smaller_features = min(out_features, in_features)
 
