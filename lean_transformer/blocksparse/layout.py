@@ -145,7 +145,7 @@ def get_hypercube_layout(
             assert block_index + opposite_index + 1 == 2 ** cube_dimension
             assert not layout[block_index, opposite_index].item()
             layout[block_index, opposite_index] = True
-
+    layout &= ~torch.eye(layout.shape[0], dtype=bool)
     if stretch:
         layout = layout[:, None, :, None].repeat(
             1, out_features // smaller_features, 1, in_features // smaller_features
