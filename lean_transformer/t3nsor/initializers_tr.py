@@ -1,8 +1,8 @@
 import numpy as np
 import torch
 
-from t3nsor.tensor_ring import TensorRing
-# from t3nsor.tensor_ring import TensorRingBatch
+from lean_transformer.t3nsor.tensor_ring import TensorRing
+# from lean_transformer.t3nsor.tensor_ring import TensorRingBatch
 
 
 def _validate_input_parameters_tr(is_tensor, shape, **params):

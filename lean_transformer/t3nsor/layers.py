@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.nn as nn
-import t3nsor as t3
+import lean_transformer.t3nsor as t3
 
 
 class TTEmbedding(nn.Module):
@@ -222,9 +222,9 @@ class TTLinear(nn.Module):
     def forward(self, x):
         weight = self.weight
         if self.bias is None:
-            return self.mm_op(x, weight)
+            return self.mm_op(x.flatten(0, -2), weight).view(*x.shape[:-1], -1)
         else:
-            return self.mm_op(x, weight) + self.bias
+            return self.mm_op(x.flatten(0, -2), weight).view(*x.shape[:-1], -1) + self.bias
 
 
 class TRLinear(nn.Module):
@@ -270,6 +270,6 @@ class TRLinear(nn.Module):
     def forward(self, x):
         weight = self.weight
         if self.bias is None:
-            return self.mm_op(x, weight)
+            return self.mm_op(x.flatten(0, -2), weight).view(*x.shape[:-1], -1)
         else:
-            return self.mm_op(x, weight) + self.bias
+            return self.mm_op(x.flatten(0, -2), weight).view(*x.shape[:-1], -1) + self.bias

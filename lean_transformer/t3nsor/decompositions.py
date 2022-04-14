@@ -1,8 +1,8 @@
 import numpy as np
 import torch
 
-from t3nsor.tensor_train import TensorTrain
-from t3nsor.utils import svd_fix
+from lean_transformer.t3nsor.tensor_train import TensorTrain
+from lean_transformer.t3nsor.utils import svd_fix
 
 
 def to_tt_tensor(tens, max_tt_rank=10, epsilon=None):

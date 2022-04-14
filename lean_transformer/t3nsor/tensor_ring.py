@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.nn as nn
-import t3nsor as t3
+import lean_transformer.t3nsor as t3
 
 class TensorRing(object):
     def __init__(self, tr_cores, shape=None, tr_ranks=None, convert_to_tensors=True):

@@ -8,6 +8,7 @@ from transformers import PretrainedConfig
 from lean_transformer.attn import SimpleAttentionCore, RotaryAttentionCore, RotaryEmbeddings
 from lean_transformer.blocksparse import GeneralizedLinear, GeneralizedMatrix
 from lean_transformer.monarch import MonarchLinear
+from lean_transformer.t3nsor import TTLinear
 from lean_transformer.utils import ACT2FN
 
 
@@ -185,7 +186,9 @@ class LeanTransformerConfig(PretrainedConfig):
         print(in_features, out_features)
         assert in_features in features_to_dims and out_features in features_to_dims, (in_features, out_features)
 
-        return MonarchLinear(in_features, out_features, features_to_dims[in_features], features_to_dims[out_features], bias)
+        layer = TTLinear(in_features, out_features, bias, tt_rank=64, forward_mode='naive')
+        layer.in_features, layer.out_features = in_features, out_features
+        return layer
 
     @lru_cache(maxsize=None)
     def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:

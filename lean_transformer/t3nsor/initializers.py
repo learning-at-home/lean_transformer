@@ -1,8 +1,8 @@
 import numpy as np
 import torch
 
-from t3nsor.tensor_train import TensorTrain
-from t3nsor.tensor_train import TensorTrainBatch
+from lean_transformer.t3nsor.tensor_train import TensorTrain
+from lean_transformer.t3nsor.tensor_train import TensorTrainBatch
 
 
 def _validate_input_parameters(is_tensor, shape, **params):
