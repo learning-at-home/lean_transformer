@@ -39,8 +39,8 @@ class SequentialWithKwargs(nn.Sequential):
                 isinstance(module, ReversibleModule) and any(isinstance(m, ActiveKwargs) for m in module.modules())
             )
         super().__init__(*modules)
-        self.gradient_checkpointing: Union[bool, int] = False
-        self.checkpoint_last = False
+        self.gradient_checkpointing: Union[bool, int] = True
+        self.checkpoint_last = True
         self.checkpoint_hook = None
         self.preserve_rng_state = True
 
