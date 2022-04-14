@@ -45,7 +45,7 @@ class LeanFFN(nn.Module):
         i2h_proj: Optional[nn.Linear] = None,
         h2o_proj: Optional[nn.Linear] = None,
         residual: bool = True,
-        ffn_custom_grad: bool = True,
+        ffn_custom_grad: bool = False,
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
@@ -86,6 +86,7 @@ class LeanFFN(nn.Module):
         return out.view(*input.shape)
 
     def _forward_custom(self, input):
+        raise NotImplementedError()
         post_ln_weight = post_ln_bias = None
         if self.post_layer_norm is not None:
             post_ln_weight, post_ln_bias = self.post_layer_norm.weight, self.post_layer_norm.bias
@@ -174,6 +175,7 @@ class _LeanFFN(torch.autograd.Function):
         ln_eps: float,
         residual: bool,
     ):
+        raise NotImplementedError()
         ctx._dropout, ctx._training, ctx._ln_eps = dropout, training, ln_eps
         ctx._activation, ctx._gated, ctx._residual = activation, gated, residual
         ctx._i2h_matmul_op, ctx._h2o_matmul_op = i2h_matmul_op, h2o_matmul_op

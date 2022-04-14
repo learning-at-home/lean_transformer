@@ -51,8 +51,12 @@ class LeanTransformer(nn.Module):
             attention_core=config.get_attention_core(),
             dropout=config.hidden_dropout_prob,
             layer_norm_eps=config.layer_norm_eps,
-            qkv_proj=config.get_linear_layer(
-                "self_attn_qkv", index, config.hidden_size, config.hidden_size * 3, bias=config.attn_qkv_bias),
+            q_proj=config.get_linear_layer(
+                "self_attn_q", index, config.hidden_size, config.hidden_size, bias=config.attn_qkv_bias),
+            k_proj=config.get_linear_layer(
+                "self_attn_q", index, config.hidden_size, config.hidden_size, bias=config.attn_qkv_bias),
+            v_proj=config.get_linear_layer(
+                "self_attn_v", index, config.hidden_size, config.hidden_size, bias=config.attn_qkv_bias),
             out_proj=config.get_linear_layer(
                 "self_attn_out", index, config.hidden_size, config.hidden_size, bias=config.out_proj_bias),
             post_layer_norm=config.post_layer_norm,

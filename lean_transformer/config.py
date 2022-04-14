@@ -7,6 +7,7 @@ from transformers import PretrainedConfig
 
 from lean_transformer.attn import SimpleAttentionCore, RotaryAttentionCore, RotaryEmbeddings
 from lean_transformer.blocksparse import GeneralizedLinear, GeneralizedMatrix
+from lean_transformer.monarch import MonarchLinear
 from lean_transformer.utils import ACT2FN
 
 
@@ -176,13 +177,15 @@ class LeanTransformerConfig(PretrainedConfig):
         if not self.share_large_matrices and self.adapter_dim != 0:
             raise ValueError("not sharing matrices => adapter_dim should be 0. Use lowrank_dim instead.")
 
-        matrix_outer_index = (index * self.num_shared_matrices) // self.total_num_layer_groups
-        matrix_inner_index = index % self.num_inner_matrices
-        matrix_index = matrix_outer_index * self.num_inner_matrices + matrix_inner_index
+        assert self.num_hidden_layers == self.total_num_layer_groups, "monarch sharing is not implemented because yozh was lazy"
+        assert self.adapter_dim == self.lowrank_dim == 0, "monarch aint got no lowrank"
+        features_to_dims = {
+            2048: (32, 64), 4096: (64, 64), 8192: (64, 128), 16384: (128, 128),
+        }
+        print(in_features, out_features)
+        assert in_features in features_to_dims and out_features in features_to_dims, (in_features, out_features)
 
-        weight_matrix = self.get_weight_matrix(key, matrix_index)
-        assert tuple(weight_matrix.shape) == (out_features, in_features)
-        return GeneralizedLinear(weight_matrix, self.adapter_dim, bias)
+        return MonarchLinear(in_features, out_features, features_to_dims[in_features], features_to_dims[out_features], bias)
 
     @lru_cache(maxsize=None)
     def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:
@@ -193,6 +196,7 @@ class LeanTransformerConfig(PretrainedConfig):
         :param index: an index of a shared matrix set, if there is more than one
         :note: even if index is not used in this function, it is necessary to ensure that lru_cache works correctly
         """
+        raise NotImplementedError()
         assert 0 <= index <= self.total_shared_matrix_sets
         if key == "self_attn_qkv":
             return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.weight_layout, self.lowrank_dim,

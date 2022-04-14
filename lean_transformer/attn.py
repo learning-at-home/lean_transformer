@@ -16,11 +16,13 @@ class LeanSelfAttention(nn.Module):
         dropout: float = 0,
         layer_norm_eps: float = 1e-12,
         post_layer_norm: bool = False,
-        qkv_proj: Optional[nn.Linear] = None,
+        q_proj: Optional[nn.Linear] = None,
+        k_proj: Optional[nn.Linear] = None,
+        v_proj: Optional[nn.Linear] = None,
         out_proj: Optional[nn.Linear] = None,
         residual: bool = True,
         attention_core: Optional[nn.Module] = None,
-        checkpoint_attention_core: bool = True,
+        checkpoint_attention_core: bool = False,
         **kwargs,
     ):
         """
@@ -53,10 +55,12 @@ class LeanSelfAttention(nn.Module):
 
         self.hidden_size = hidden_size
         self.attention_core = attention_core
-        self.qkv_proj = nn.Linear(hidden_size, hidden_size * 3) if qkv_proj is None else qkv_proj
+        self.q_proj = nn.Linear(hidden_size, hidden_size) if q_proj is None else q_proj
+        self.k_proj = nn.Linear(hidden_size, hidden_size) if k_proj is None else k_proj
+        self.v_proj = nn.Linear(hidden_size, hidden_size) if v_proj is None else v_proj
         self.out_proj = nn.Linear(hidden_size, hidden_size) if out_proj is None else out_proj
-        assert self.qkv_proj.in_features == self.out_proj.in_features == self.out_proj.out_features == hidden_size
-        assert self.qkv_proj.out_features == hidden_size * 3
+        # assert self.qkv_proj.in_features == self.out_proj.in_features == self.out_proj.out_features == hidden_size
+        # assert self.qkv_proj.out_features == hidden_size * 3
 
         self.pre_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.post_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if post_layer_norm else None
@@ -65,8 +69,7 @@ class LeanSelfAttention(nn.Module):
 
     def forward(self, hidden_states, attention_mask=None, output_attentions=False):
         hidden_states_ln = self.pre_layer_norm(hidden_states)
-        qkv_output = self.qkv_proj(hidden_states_ln)
-        query, key, value = qkv_output.split(self.hidden_size, dim=qkv_output.ndim - 1)
+        query, key, value = self.q_proj(hidden_states_ln), self.k_proj(hidden_states_ln), self.v_proj(hidden_states_ln)
         attention_output, attention_probs = self._maybe_checkpoint(
             self.attention_core, query, key, value, attention_mask
         )
