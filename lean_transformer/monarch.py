@@ -99,4 +99,7 @@ class MonarchLinear(nn.Module):
 
         # after loop: [out_dim[0], ..., out_dim[N - 1], batch]
         tensor = tensor.flatten(0, -2).swapaxes_(0, 1)
-        return tensor.reshape(*input_shape[:-1], -1)
+        tensor = tensor.reshape(*input_shape[:-1], -1)
+        if self.bias is not None:
+            tensor += self.bias
+        return tensor
