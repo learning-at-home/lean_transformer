@@ -268,7 +268,10 @@ class VoidLinear(nn.Module):
             self.zm.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
             self.grid_scale.to(self.zm.dtype)
         ).view(self.out_features, self.in_features)
-        baseline = F.linear(input, random_matrix)
+        if torch.is_autocast_enabled():
+            baseline = F.linear(input, random_matrix)
+        else:
+            baseline = F.linear(input.to(random_matrix.dtype), random_matrix).to(input.dtype)
         hid = F.linear(input, self.lowrank_first)
         bias_or_zeros = torch.zeros_like(self.scale) if self.bias is None else self.bias
         intercept = torch.cat([self.scale, bias_or_zeros], dim=0)
