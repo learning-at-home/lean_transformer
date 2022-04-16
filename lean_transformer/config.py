@@ -235,16 +235,19 @@ import torch.nn.functional as F
 import math
 
 
+G = 32
+
 class VoidLinear(nn.Module):
     def __init__(self, in_features: int, out_features: int, lowrank_dim: int = 128, bias: bool = True):
         super().__init__()
         self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
-
         self.register_buffer('zm', torch.empty(out_features, in_features, dtype=torch.half), persistent=True)
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
         self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
-        self.grid_scale = nn.Parameter(torch.ones(out_features // 8, 1, in_features // 8, 1))
-        self.grid_bias = nn.Parameter(torch.zeros(out_features // 8, 1, in_features // 8, 1))
+        self.ingrid_scale = nn.Parameter(torch.ones(1, G, 1, G))
+        self.ingrid_bias = nn.Parameter(torch.zeros(1, G, 1, G))
+        self.grid_scale = nn.Parameter(torch.ones(out_features // G, 1, in_features // G, 1))
+        self.grid_bias = nn.Parameter(torch.zeros(out_features // G, 1, in_features // G, 1))
         self.scale = nn.Parameter(torch.ones(out_features))
         self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
 
@@ -257,17 +260,26 @@ class VoidLinear(nn.Module):
         nn.init.xavier_uniform_(self.lowrank_first)
         nn.init.zeros_(self.lowrank_second)
         nn.init.ones_(self.scale)
+        nn.init.ones_(self.ingrid_scale)
+        nn.init.zeros_(self.ingrid_bias)
         nn.init.ones_(self.grid_scale)
         nn.init.zeros_(self.grid_bias)
         if self.bias is not None:
             nn.init.zeros_(self.bias)
 
     def forward(self, input):
+        random_matrix = self.zm.view(self.grid_scale.shape[0], G, self.grid_scale.shape[2], G)
         random_matrix = torch.addcmul(
             self.grid_bias.to(self.zm.dtype),
-            self.zm.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
+            random_matrix,
             self.grid_scale.to(self.zm.dtype)
-        ).view(self.out_features, self.in_features)
+        )
+        random_matrix = torch.addcmul(
+            self.ingrid_bias.to(self.zm.dtype),
+            random_matrix,
+            self.ingrid_scale.to(self.zm.dtype)
+        )
+        random_matrix = random_matrix.view(self.out_features, self.in_features)
         baseline = F.linear(input, random_matrix)
         hid = F.linear(input, self.lowrank_first)
         bias_or_zeros = torch.zeros_like(self.scale) if self.bias is None else self.bias
