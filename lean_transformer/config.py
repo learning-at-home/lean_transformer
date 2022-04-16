@@ -7,7 +7,6 @@ from transformers import PretrainedConfig
 
 from lean_transformer.attn import SimpleAttentionCore, RotaryAttentionCore, RotaryEmbeddings
 from lean_transformer.blocksparse import GeneralizedLinear, GeneralizedMatrix
-from lean_transformer.monarch import MonarchLinear
 from lean_transformer.utils import ACT2FN
 
 
@@ -177,15 +176,9 @@ class LeanTransformerConfig(PretrainedConfig):
         if not self.share_large_matrices and self.adapter_dim != 0:
             raise ValueError("not sharing matrices => adapter_dim should be 0. Use lowrank_dim instead.")
 
-        assert self.num_hidden_layers == self.total_num_layer_groups, "monarch sharing is not implemented because yozh was lazy"
-        assert self.adapter_dim == self.lowrank_dim == 0, "monarch aint got no lowrank"
-        features_to_dims = {
-            2048: (32, 64), 4096: (64, 64), 8192: (64, 128), 16384: (128, 128),
-        }
-        print(in_features, out_features)
-        assert in_features in features_to_dims and out_features in features_to_dims, (in_features, out_features)
-
-        return MonarchLinear(in_features, out_features, features_to_dims[in_features], features_to_dims[out_features], bias)
+        assert self.num_hidden_layers == self.total_num_layer_groups, "sharing is not implemented because yozh was lazy"
+        assert self.lowrank_dim != 0, "need lowrank"
+        return VoidLinear(in_features, out_features, self.lowrank_dim, bias)
 
     @lru_cache(maxsize=None)
     def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:
@@ -234,3 +227,43 @@ class LeanTransformerConfig(PretrainedConfig):
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
+
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Optional
+import math
+
+
+class VoidLinear(nn.Module):
+    def __init__(self, in_features: int, out_features: int, lowrank_dim: int = 128, bias: bool = True):
+        super().__init__()
+        self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
+
+        self.register_buffer('zm', torch.empty(out_features, in_features), persistent=True)
+        self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
+        self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
+        self.scale = nn.Parameter(torch.ones(out_features))
+        self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
+
+        nn.init.xavier_normal_(self.zm)
+        print('CHECKSUM:', self.zm.sum())
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+            print("BARRIER")
+        nn.init.xavier_uniform_(self.lowrank_first)
+        nn.init.zeros_(self.lowrank_second)
+        nn.init.ones_(self.scale)
+        if self.bias is not None:
+            nn.init.zeros_(self.bias)
+
+    def forward(self, input):
+        baseline = F.linear(input, self.zm)
+        hid = F.linear(input, self.lowrank_first)
+        bias_or_zeros = torch.zeros_like(self.scale if self.bias is None else self.bias)
+        intercept = torch.cat([self.scale, bias_or_zeros], dim=0)
+        multiplicative, additive = F.linear(hid, self.lowrank_second, intercept).split(self.out_features, dim=-1)
+        return torch.addcmul(additive, multiplicative, baseline)
+
+
