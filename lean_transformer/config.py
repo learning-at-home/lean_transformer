@@ -251,7 +251,8 @@ class VoidLinear(nn.Module):
         print('CHECKSUM:', self.zm.sum())
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
-            print("BARRIER")
+            if torch.distributed.get_rank() == 0:
+                print("BARRIER", flush=True)
         nn.init.xavier_uniform_(self.lowrank_first)
         nn.init.zeros_(self.lowrank_second)
         nn.init.ones_(self.scale)
@@ -261,7 +262,7 @@ class VoidLinear(nn.Module):
     def forward(self, input):
         baseline = F.linear(input, self.zm)
         hid = F.linear(input, self.lowrank_first)
-        bias_or_zeros = torch.zeros_like(self.scale if self.bias is None else self.bias)
+        bias_or_zeros = torch.zeros_like(self.scale) if self.bias is None else self.bias
         intercept = torch.cat([self.scale, bias_or_zeros], dim=0)
         multiplicative, additive = F.linear(hid, self.lowrank_second, intercept).split(self.out_features, dim=-1)
         return torch.addcmul(additive, multiplicative, baseline)
