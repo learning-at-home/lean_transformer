@@ -1,3 +1,4 @@
+import scipy.stats  # compatibility for internal testing environment
 from .ffn import LeanFFN
 from .attn import LeanSelfAttention, SimpleAttentionCore, RotaryAttentionCore
 from .rotary import RotaryEmbeddings, rotate
