@@ -145,6 +145,8 @@ def get_hypercube_layout(
             assert block_index + opposite_index + 1 == 2 ** cube_dimension
             assert not layout[block_index, opposite_index].item()
             layout[block_index, opposite_index] = True
+    for i in range(len(layout)):
+        layout[i][4*(i//4)+4-(i%4)-1] = True
 
     if stretch:
         layout = layout[:, None, :, None].repeat(
