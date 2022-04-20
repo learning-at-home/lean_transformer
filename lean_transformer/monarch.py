@@ -84,6 +84,7 @@ class MonarchLinear(StructuredLinear):
 
     def __init__(self, *args, nblocks=4, **kwargs):
         super().__init__(*args, **kwargs)
+        print("AM MONARCH")
         in_blksz = int(math.ceil(self.in_features / nblocks))
         out_blksz = int(math.ceil(self.out_features / nblocks))
         self.in_features_extended = in_blksz * nblocks
