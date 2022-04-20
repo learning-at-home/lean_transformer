@@ -179,13 +179,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
         assert self.num_hidden_layers == self.total_num_layer_groups, "monarch sharing is not implemented because yozh was lazy"
         assert self.adapter_dim == self.lowrank_dim == 0, "monarch aint got no lowrank"
-        features_to_dims = {
-            2048: (32, 64), 4096: (64, 64), 8192: (64, 128), 16384: (128, 128),
-        }
-        print(in_features, out_features)
-        assert in_features in features_to_dims and out_features in features_to_dims, (in_features, out_features)
-
-        return MonarchLinear(in_features, out_features, features_to_dims[in_features], features_to_dims[out_features], bias)
+        return MonarchLinear(in_features, out_features, nblocks=16, bias=bias)
 
     @lru_cache(maxsize=None)
     def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:
