@@ -208,7 +208,7 @@ def get_exponential_layout(
     smaller_features = min(out_features, in_features)
 
     assert out_features % smaller_features == 0 and in_features % smaller_features == 0
-    layout = torch.zeroes(smaller_features//block_size, smaller_features//block_size, dtype=torch.bool)
+    layout = torch.zeros(smaller_features//block_size, smaller_features//block_size, dtype=torch.bool)
     for i in range(len(layout)):
         j = 1
         while j < len(layout):
