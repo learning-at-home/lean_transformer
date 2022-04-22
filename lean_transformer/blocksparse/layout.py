@@ -181,17 +181,39 @@ def get_kautz_layout(
 
 @register_blocksparse_layout("de_bruijn")
 def get_de_bruijn_layout(
-        out_features: int, in_features: int, block_size: int, m: int, n: int, diagonal = True, stretch: bool = False):
+        out_features: int, in_features: int, block_size: int, m: int, n: int, stretch: bool = False):
     """
-    A layout that uses Kautz graph (see https://en.wikipedia.org/wiki/Kautz_graph)
-    :param diagonal: add an extra edge connecting each node with itself.
-    """
+    A layout that uses De Bruijn graph (see https://en.wikipedia.org/wiki/De_Bruijn_graph)    """
     smaller_features = min(out_features, in_features)
 
     assert out_features % smaller_features == 0 and in_features % smaller_features == 0
     graph = Graph.De_Bruijn(m, n)
     layout = torch.tensor(list(graph.get_adjacency()))
     assert smaller_features == layout.shape[0]*block_size
+    if stretch:
+        layout = layout[:, None, :, None].repeat(
+            1, out_features // smaller_features, 1, in_features // smaller_features
+        ).flatten(-2, -1).flatten(0, 1)
+    else:
+        layout = layout.repeat(out_features // smaller_features, in_features // smaller_features)
+    return layout
+
+
+@register_blocksparse_layout("exponential")
+def get_exponential_layout(
+        out_features: int, in_features: int, block_size: int, diagonal = True, stretch: bool = False):
+    """
+    :param diagonal: add an extra edge connecting each node with itself.
+    """
+    smaller_features = min(out_features, in_features)
+
+    assert out_features % smaller_features == 0 and in_features % smaller_features == 0
+    layout = torch.zeroes(smaller_features//block_size, smaller_features//block_size, dtype=torch.bool)
+    for i in range(len(layout)):
+        j = 1
+        while j < len(layout):
+            layout[i][(i+j)%len(layout)] = True
+            j *= 2
     if diagonal:
         layout += torch.eye(layout.shape[0], dtype=torch.bool)
     if stretch:
@@ -201,7 +223,6 @@ def get_de_bruijn_layout(
     else:
         layout = layout.repeat(out_features // smaller_features, in_features // smaller_features)
     return layout
-
 
 def butterfly_factor_to_matrix(twiddle: torch.Tensor, factor_index: int) -> torch.Tensor:
     """
