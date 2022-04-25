@@ -232,6 +232,7 @@ class LeanTransformerConfig(PretrainedConfig):
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint
 import math
 
 
@@ -246,8 +247,7 @@ class VoidLinear(nn.Module):
         self.out_blocks, self.in_blocks = out_features // block_size, in_features // block_size
 
         blocky_shape = (self.out_blocks, self.in_blocks, block_size, block_size)
-        self.register_buffer('zm', torch.randint(0, codebook_size, blocky_shape, dtype=torch.int64), persistent=True)
-        #                                                     using int64 cuz torch doesnt support int8 indexing :(
+        self.register_buffer('zm', torch.randint(0, codebook_size, blocky_shape, dtype=torch.uint8), persistent=True)
         self.codebooks = nn.Parameter(torch.empty(self.out_blocks * self.in_blocks, block_size * block_size))
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
@@ -272,9 +272,10 @@ class VoidLinear(nn.Module):
             nn.init.zeros_(self.bias)
 
     def forward(self, input):
+        matrix = cast_and_gather(self.zm, self.codebooks.to(torch.float16 if torch.is_autocast_enabled() else input.dtype))
         random_matrix = torch.addcmul(
             self.grid_bias.to(self.zm.dtype),
-            self.zm.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
+            matrix.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
             self.grid_scale.to(self.zm.dtype)
         ).view(self.out_features, self.in_features)
         if torch.is_autocast_enabled():
@@ -287,4 +288,25 @@ class VoidLinear(nn.Module):
         multiplicative, additive = F.linear(hid, self.lowrank_second, intercept).split(self.out_features, dim=-1)
         return torch.addcmul(additive, multiplicative, baseline)
 
+
+def cast_and_gather(zm: torch.ByteTensor, codebooks: nn.Parameter) -> torch.Tensor:
+    """
+    A crutch that selects values from codebooks using int8 indices, bypassing the limitation that indices must be int64
+    This function temporarily casts indices (zm) to 64-bit and selects values without saving them for backward.
+    As such, only one set of int64 tensors will be materialized at a time.
+    """
+    with torch.cuda.amp.autocast(enabled=False):
+        if torch.is_grad_enabled():
+            return torch.utils.checkpoint.checkpoint(_cast_and_gather_inner, zm, codebooks, preserve_rng_state=False)
+        else:
+            return _cast_and_gather_inner(zm, codebooks)
+
+
+def _cast_and_gather_inner(zm: torch.ByteTensor, codebooks: torch.Tensor) -> torch.Tensor:
+    out_blocks, in_blocks, block_size, _ = zm.shape
+    zm_flat_blocks = zm.view(out_blocks * in_blocks, block_size * block_size)
+    flat_blocks_permuted = torch.gather(codebooks, 1, zm_flat_blocks.long()).view(zm.shape).swapaxes_(1, 2)
+    # ^-- shape: [out_blocks, block_size, in_blocks, block_size]
+
+    return flat_blocks_permuted.reshape(out_blocks * block_size, in_blocks * block_size)  # <-- this creates a copy!
 
