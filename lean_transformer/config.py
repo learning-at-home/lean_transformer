@@ -236,11 +236,20 @@ import math
 
 
 class VoidLinear(nn.Module):
-    def __init__(self, in_features: int, out_features: int, lowrank_dim: int = 128, bias: bool = True):
+    def __init__(
+            self, in_features: int, out_features: int, lowrank_dim: int = 128,
+            block_size: int = 64, codebook_size: int = 256, bias: bool = True):
         super().__init__()
         self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
+        assert out_features % block_size == 0
+        assert in_features % block_size == 0
+        self.out_blocks, self.in_blocks = out_features // block_size, in_features // block_size
 
-        self.register_buffer('zm', torch.empty(out_features, in_features, dtype=torch.half), persistent=True)
+        blocky_shape = (self.out_blocks, self.in_blocks, block_size, block_size)
+        self.register_buffer('zm', torch.randint(0, codebook_size, blocky_shape, dtype=torch.int64), persistent=True)
+        #                                                     using int64 cuz torch doesnt support int8 indexing :(
+        self.codebooks = nn.Parameter(torch.empty(self.out_blocks * self.in_blocks, block_size * block_size))
+
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
         self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
         self.grid_scale = nn.Parameter(torch.ones(out_features // 8, 1, in_features // 8, 1))
@@ -254,6 +263,7 @@ class VoidLinear(nn.Module):
             torch.distributed.barrier()
             if torch.distributed.get_rank() == 0:
                 print("BARRIER", flush=True)
+        nn.init.normal_(self.codebooks, mean=0.0, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
         nn.init.xavier_uniform_(self.lowrank_first)
         nn.init.zeros_(self.lowrank_second)
         nn.init.ones_(self.scale)
