@@ -257,7 +257,6 @@ class VoidLinear(nn.Module):
         self.scale = nn.Parameter(torch.ones(out_features))
         self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
 
-        nn.init.xavier_normal_(self.zm)
         print('CHECKSUM:', self.zm.sum())
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
