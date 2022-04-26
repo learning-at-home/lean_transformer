@@ -2,6 +2,7 @@ import ast
 import functools
 import math
 from typing import Optional, Tuple
+import random
 
 import einops
 import torch
@@ -186,6 +187,7 @@ def get_random_layout(
 
     assert out_features % smaller_features == 0 and in_features % smaller_features == 0
     n = smaller_features//block_size
+    random.seed(1234)
     graph = Graph.K_Regular(n, k, directed)
     layout = torch.tensor(list(graph.get_adjacency()))
     print(layout)
