@@ -7,7 +7,7 @@ from transformers import PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutput
 
 from lean_transformer import LeanFFN, LeanSelfAttention
-from lean_transformer.config import LeanTransformerConfig
+from lean_transformer.config import LeanTransformerConfig, PermuteHidden
 from lean_transformer.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
 from lean_transformer.blocksparse import GeneralizedMatrix
 
@@ -45,7 +45,7 @@ class LeanTransformer(nn.Module):
         return self._sequential[0]
 
     def _make_attention(self, index: int, config: LeanTransformerConfig):
-        return LeanSelfAttention(
+        return PermuteHidden(self.hidden_size, LeanSelfAttention(
             config.hidden_size,
             config.num_attention_heads,
             attention_core=config.get_attention_core(),
@@ -61,10 +61,10 @@ class LeanTransformer(nn.Module):
                 "self_attn_out", index, config.hidden_size, config.hidden_size, bias=config.out_proj_bias),
             post_layer_norm=config.post_layer_norm,
             residual=not config.reversible, checkpoint_attention_core=not config.reversible
-        )
+        ))
 
     def _make_ffn(self, index: int, config: LeanTransformerConfig):
-        return LeanFFN(
+        return PermuteHidden(self.hidden_size, LeanFFN(
             config.hidden_size,
             config.intermediate_size,
             activation=self.config.get_activation_callable(),
@@ -77,7 +77,7 @@ class LeanTransformer(nn.Module):
                                              config.hidden_size, bias=config.out_proj_bias),
             post_layer_norm=config.post_layer_norm,
             residual=not config.reversible,
-        )
+        ))
 
     def forward(self, hidden_states, attention_mask=None):
         """

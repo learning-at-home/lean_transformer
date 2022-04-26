@@ -236,6 +236,21 @@ import torch.utils.checkpoint
 import math
 
 
+class PermuteHidden(nn.Module):
+    def __init__(self, dim, wrapped_module: nn.Module):
+        super().__init__()
+        self.wrapped_module = wrapped_module
+        self.register_buffer('forward_perm', torch.randperm(dim), persistent=True)
+        inverse_perm = torch.zeros_like(self.forward_perm)
+        inverse_perm[self.forward_perm] = torch.arange(dim)
+        self.register_buffer('inverse_perm', inverse_perm, persistent=True)
+
+    def forward(self, input, *args, **kwargs):
+        input_permuted = torch.index_select(input, -1, self.forward_perm)
+        output_permuted = self.wrapped_module(input_permuted, *args, **kwargs)
+        return torch.index_select(output_permuted, -1, self.inverse_perm)
+
+
 class VoidLinear(nn.Module):
     def __init__(
             self, in_features: int, out_features: int, *, lowrank_dim: int = 128,
