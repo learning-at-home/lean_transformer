@@ -178,7 +178,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
         assert self.num_hidden_layers == self.total_num_layer_groups, "sharing is not implemented because yozh was lazy"
         assert self.lowrank_dim != 0, "need lowrank"
-        return VoidLinear(in_features, out_features, self.lowrank_dim, bias)
+        return VoidLinear(in_features, out_features, lowrank_dim=self.lowrank_dim, bias=bias)
 
     @lru_cache(maxsize=None)
     def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:
@@ -238,7 +238,7 @@ import math
 
 class VoidLinear(nn.Module):
     def __init__(
-            self, in_features: int, out_features: int, lowrank_dim: int = 128,
+            self, in_features: int, out_features: int, *, lowrank_dim: int = 128,
             block_size: int = 64, codebook_size: int = 256, bias: bool = True):
         super().__init__()
         self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
@@ -248,7 +248,7 @@ class VoidLinear(nn.Module):
 
         blocky_shape = (self.out_blocks, self.in_blocks, block_size, block_size)
         self.register_buffer('zm', torch.randint(0, codebook_size, blocky_shape, dtype=torch.uint8), persistent=True)
-        self.codebooks = nn.Parameter(torch.empty(self.out_blocks * self.in_blocks, block_size * block_size))
+        self.codebooks = nn.Parameter(torch.empty(self.out_blocks * self.in_blocks, codebook_size))
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
         self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
@@ -272,11 +272,12 @@ class VoidLinear(nn.Module):
             nn.init.zeros_(self.bias)
 
     def forward(self, input):
-        matrix = cast_and_gather(self.zm, self.codebooks.to(torch.float16 if torch.is_autocast_enabled() else input.dtype))
+        dtype = torch.float16 if torch.is_autocast_enabled() else input.dtype
+        random_matrix = cast_and_gather(self.zm, self.codebooks.to(dtype))
         random_matrix = torch.addcmul(
-            self.grid_bias.to(self.zm.dtype),
-            matrix.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
-            self.grid_scale.to(self.zm.dtype)
+            self.grid_bias.to(dtype),
+            random_matrix.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
+            self.grid_scale.to(dtype)
         ).view(self.out_features, self.in_features)
         if torch.is_autocast_enabled():
             baseline = F.linear(input, random_matrix)
