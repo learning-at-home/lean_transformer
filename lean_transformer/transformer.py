@@ -45,7 +45,7 @@ class LeanTransformer(nn.Module):
         return self._sequential[0]
 
     def _make_attention(self, index: int, config: LeanTransformerConfig):
-        return PermuteHidden(self.hidden_size, LeanSelfAttention(
+        return PermuteHidden(self.config.hidden_size, LeanSelfAttention(
             config.hidden_size,
             config.num_attention_heads,
             attention_core=config.get_attention_core(),
@@ -64,7 +64,7 @@ class LeanTransformer(nn.Module):
         ))
 
     def _make_ffn(self, index: int, config: LeanTransformerConfig):
-        return PermuteHidden(self.hidden_size, LeanFFN(
+        return PermuteHidden(self.config.hidden_size, LeanFFN(
             config.hidden_size,
             config.intermediate_size,
             activation=self.config.get_activation_callable(),

@@ -247,8 +247,9 @@ class PermuteHidden(nn.Module):
 
     def forward(self, input, *args, **kwargs):
         input_permuted = torch.index_select(input, -1, self.forward_perm)
-        output_permuted = self.wrapped_module(input_permuted, *args, **kwargs)
-        return torch.index_select(output_permuted, -1, self.inverse_perm)
+        output_permuted, *_etc = self.wrapped_module(input_permuted, *args, **kwargs)
+        output_unpermuted = torch.index_select(output_permuted, -1, self.inverse_perm)
+        return (output_unpermuted, *_etc)
 
 
 class VoidLinear(nn.Module):
