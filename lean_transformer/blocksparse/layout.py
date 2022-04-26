@@ -18,7 +18,7 @@ def register_blocksparse_layout(name: str):
     def _register(f: callable):
         if name in REGISTERED_LAYOUTS:
             logger.warning(f"Overwriting layout {name} with {f}.")
-        REGISTERED_LAYOUTS[name] = f
+        REGISTERED_LAYOUTS[name] = functools.lru_cache(f)
         return f
     return _register
 
@@ -179,7 +179,30 @@ def get_kautz_layout(
     return layout
 
 
+@register_blocksparse_layout("barabasi")
+def get_barabasi_layout(
+        out_features: int, in_features: int, block_size: int, k: int, directed=False, diagonal = True, stretch: bool = False):
+    smaller_features = min(out_features, in_features)
+
+    assert out_features % smaller_features == 0 and in_features % smaller_features == 0
+    n = smaller_features//block_size
+    graph = Graph.Barabasi(n, k, directed)
+    layout = torch.tensor(list(graph.get_adjacency()))
+    print(layout)
+    assert smaller_features == layout.shape[0]*block_size
+    if diagonal:
+        layout += torch.eye(layout.shape[0], dtype=torch.bool)
+    if stretch:
+        layout = layout[:, None, :, None].repeat(
+            1, out_features // smaller_features, 1, in_features // smaller_features
+        ).flatten(-2, -1).flatten(0, 1)
+    else:
+        layout = layout.repeat(out_features // smaller_features, in_features // smaller_features)
+    return layout
+
+
 @register_blocksparse_layout("random")
+@functools.lru_cache
 def get_random_layout(
         out_features: int, in_features: int, block_size: int, k: int, directed=False, diagonal = True, stretch: bool = False):
     smaller_features = min(out_features, in_features)
