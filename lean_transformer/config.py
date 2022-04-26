@@ -246,8 +246,6 @@ class PermuteHidden(nn.Module):
         self.register_buffer('inverse_perm', inverse_perm, persistent=True)
 
     def forward(self, input, *args, **kwargs):
-        if isinstance(input, tuple):
-            print([i.shape for i in input], type(self.wrapped_module))
         input_permuted = torch.index_select(input, -1, self.forward_perm)
         ret = self.wrapped_module(input_permuted, *args, **kwargs)
         output_permuted = ret if isinstance(ret, torch.Tensor) else ret[0] # unpack tuple
