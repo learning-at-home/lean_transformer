@@ -239,16 +239,12 @@ import math
 class VoidLinear(nn.Module):
     def __init__(
             self, in_features: int, out_features: int, *, lowrank_dim: int = 128,
-            block_size: int = 64, codebook_size: int = 256, bias: bool = True):
+            codebook_size: int = 176, bias: bool = True):
         super().__init__()
         self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
-        assert out_features % block_size == 0
-        assert in_features % block_size == 0
-        self.out_blocks, self.in_blocks = out_features // block_size, in_features // block_size
 
-        blocky_shape = (self.out_blocks, self.in_blocks, block_size, block_size)
-        self.register_buffer('zm', torch.randint(0, codebook_size, blocky_shape, dtype=torch.uint8), persistent=True)
-        self.codebooks = nn.Parameter(torch.empty(self.out_blocks * self.in_blocks, codebook_size))
+        self.register_buffer('zm', torch.randint(0, codebook_size, (out_features, in_features), dtype=torch.uint8), persistent=True)
+        self.codebooks = nn.Parameter(torch.empty(self.out_features, codebook_size))
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
         self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
@@ -304,10 +300,5 @@ def cast_and_gather(zm: torch.ByteTensor, codebooks: nn.Parameter) -> torch.Tens
 
 
 def _cast_and_gather_inner(zm: torch.ByteTensor, codebooks: torch.Tensor) -> torch.Tensor:
-    out_blocks, in_blocks, block_size, _ = zm.shape
-    zm_flat_blocks = zm.view(out_blocks * in_blocks, block_size * block_size)
-    flat_blocks_permuted = torch.gather(codebooks, 1, zm_flat_blocks.long()).view(zm.shape).swapaxes_(1, 2)
-    # ^-- shape: [out_blocks, block_size, in_blocks, block_size]
-
-    return flat_blocks_permuted.reshape(out_blocks * block_size, in_blocks * block_size)  # <-- this creates a copy!
+    return torch.gather(codebooks, 1, zm.long()).view(zm.shape)
 
