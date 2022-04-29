@@ -239,7 +239,7 @@ import math
 class VoidLinear(nn.Module):
     def __init__(
             self, in_features: int, out_features: int, *, lowrank_dim: int = 128,
-            block_size: int = 64, codebook_size: int = 256, bias: bool = True):
+            block_size: int = 128, codebook_size: int = 1024, bias: bool = True):
         super().__init__()
         self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
         assert out_features % block_size == 0
@@ -247,7 +247,7 @@ class VoidLinear(nn.Module):
         self.out_blocks, self.in_blocks = out_features // block_size, in_features // block_size
 
         blocky_shape = (self.out_blocks, self.in_blocks, block_size, block_size)
-        self.register_buffer('zm', torch.randint(0, codebook_size, blocky_shape, dtype=torch.uint8), persistent=True)
+        self.register_buffer('zm', torch.randint(0, codebook_size, blocky_shape, dtype=torch.int16), persistent=True)
         self.codebooks = nn.Parameter(torch.empty(self.out_blocks * self.in_blocks, codebook_size))
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
