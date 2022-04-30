@@ -210,7 +210,7 @@ def get_blocks_layout(
     n = smaller_features//block_size
     d = torch.ones([8, 8], dtype=torch.bool)
     layout = torch.block_diag(*([d]*(n//8)))
-    layout -= torch.eye(layout.shape[0], dtype=torch.bool)
+    layout ^= torch.eye(layout.shape[0], dtype=torch.bool)
     print(layout)
     assert smaller_features == layout.shape[0]*block_size
     if stretch:
