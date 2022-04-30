@@ -201,6 +201,27 @@ def get_barabasi_layout(
     return layout
 
 
+@register_blocksparse_layout("blocks")
+def get_blocks_layout(
+        out_features: int, in_features: int, block_size: int, stretch: bool = False):
+    smaller_features = min(out_features, in_features)
+
+    assert out_features % smaller_features == 0 and in_features % smaller_features == 0
+    n = smaller_features//block_size
+    d = torch.ones([8, 8], dtype=torch.bool)
+    layout = torch.block_diag([d]*(n//8))
+    layout -= torch.eye(layout.shape[0], dtype=torch.bool)
+    print(layout)
+    assert smaller_features == layout.shape[0]*block_size
+    if stretch:
+        layout = layout[:, None, :, None].repeat(
+            1, out_features // smaller_features, 1, in_features // smaller_features
+        ).flatten(-2, -1).flatten(0, 1)
+    else:
+        layout = layout.repeat(out_features // smaller_features, in_features // smaller_features)
+    return layout
+
+
 @register_blocksparse_layout("random")
 @functools.lru_cache
 def get_random_layout(
