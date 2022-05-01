@@ -7,6 +7,8 @@ from torch.utils.checkpoint import checkpoint
 
 from lean_transformer.rotary import RotaryEmbeddings
 
+from . import batch_step_attn_core_func
+
 
 class LeanSelfAttention(nn.Module):
     def __init__(
@@ -15,6 +17,7 @@ class LeanSelfAttention(nn.Module):
         num_attention_heads: int,
         dropout: float = 0,
         layer_norm_eps: float = 1e-12,
+        pre_layer_norm: bool = True,
         post_layer_norm: bool = False,
         qkv_proj: Optional[nn.Linear] = None,
         out_proj: Optional[nn.Linear] = None,
@@ -34,6 +37,7 @@ class LeanSelfAttention(nn.Module):
         :param hidden_size: base hidden size of the transformer, before q/k/v projections
         :param num_attention_heads: number of heads, as defined in the original transformer
         :param dropout: hidden dropout probability, applied to the output projection (before adding residual)
+        :param pre_layer_norm: if set, applies layer norm to input tensor
         :param layer_norm_eps: see torch.nn.functional.layer_norm
         :param post_layer_norm: if set, applies an additional layer norm to projected attention outputs before residuals,
            as proposed in the CogView paper ( arXiv:2105.13290 ). This is meant to make fp16 training
@@ -58,13 +62,13 @@ class LeanSelfAttention(nn.Module):
         assert self.qkv_proj.in_features == self.out_proj.in_features == self.out_proj.out_features == hidden_size
         assert self.qkv_proj.out_features == hidden_size * 3
 
-        self.pre_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.pre_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if pre_layer_norm else None
         self.post_layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) if post_layer_norm else None
         self.output_dropout = nn.Dropout(dropout, inplace=False)
         self.residual, self.checkpoint_attention_core = residual, checkpoint_attention_core
 
     def forward(self, hidden_states, attention_mask=None, output_attentions=False):
-        hidden_states_ln = self.pre_layer_norm(hidden_states)
+        hidden_states_ln = self.pre_layer_norm(hidden_states) if self.pre_layer_norm else hidden_states
         qkv_output = self.qkv_proj(hidden_states_ln)
         query, key, value = qkv_output.split(self.hidden_size, dim=qkv_output.ndim - 1)
         attention_output, attention_probs = self._maybe_checkpoint(
@@ -83,12 +87,14 @@ class LeanSelfAttention(nn.Module):
 
 
 class SimpleAttentionCore(nn.Module):
-    def __init__(self, hidden_size: int, num_attention_heads: int, attention_probs_dropout: float = 0.0):
+    def __init__(self, hidden_size: int, num_attention_heads: int, attention_probs_dropout: float = 0.0,
+                 batched_attention_size: int = -1):
         super().__init__()
         assert hidden_size % num_attention_heads == 0
         self.attention_dropout = nn.Dropout(attention_probs_dropout)
         self.hidden_size, self.num_attention_heads = hidden_size, num_attention_heads
         self.attention_head_size = hidden_size // num_attention_heads
+        self.batched_attention_size = batched_attention_size
 
     def forward(self, query, key, value, attention_mask):
         """
@@ -105,7 +111,7 @@ class SimpleAttentionCore(nn.Module):
             assert torch.is_floating_point(attention_mask), "expected float mask with negative values for masked items"
         return self._attention_core_forward(
             query, key, value, attention_mask, self.num_attention_heads, self.attention_dropout.p,
-            self.training, scale_inplace=False,
+            self.training, scale_inplace=False, batched_attention_size=self.batched_attention_size
         )
 
     @staticmethod
@@ -114,8 +120,18 @@ class SimpleAttentionCore(nn.Module):
             key: torch.Tensor,
             value: torch.Tensor,
             attention_mask: Optional[torch.Tensor],
-            num_attention_heads: int, attention_dropout: float, training: bool, scale_inplace: bool
+            num_attention_heads: int, attention_dropout: float, training: bool, scale_inplace: bool,
+            batched_attention_size: int = -1
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        if batched_attention_size != -1:
+            hidden_size = query.shape[-1]
+            attention_head_size = hidden_size // num_attention_heads
+            scaling = attention_head_size ** -0.5
+            ret = batch_step_attn_core_func.batch_step_attn_core_func(num_attention_heads, scaling,
+                batched_attention_size, query, key, value, attention_mask)
+            return ret, None
+
         # transpose from [batch, seq_length, full_hid_size] to [batch, num_heads, seq_length, head_size]
         new_query_shape = query.shape[:-1] + (num_attention_heads, -1)
         new_kv_shape = key.shape[:-1] + (num_attention_heads, -1)
@@ -168,4 +184,5 @@ class RotaryAttentionCore(SimpleAttentionCore):
     def forward(self, query, key, value, attention_mask):
         return self._attention_core_forward(
             self.rotate(query), self.rotate(key), value, attention_mask, self.num_attention_heads,
-            self.attention_dropout.p, self.training, scale_inplace=True)
+            self.attention_dropout.p, self.training, scale_inplace=True,
+            batched_attention_size=self.batched_attention_size)
