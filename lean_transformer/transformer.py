@@ -1,16 +1,15 @@
 from functools import partial
 from typing import Tuple, Optional, Union
 
-import torch
 from torch import nn as nn
 from torch.autograd.graph import saved_tensors_hooks
 from transformers import PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutput
 
+from lean_transformer import LeanFFN, LeanSelfAttention
 from lean_transformer.config import LeanTransformerConfig
 from lean_transformer.sequence import ActiveKwargs, ReversibleWithKwargs, SequentialWithKwargs
 from lean_transformer.blocksparse import GeneralizedMatrix
-from lean_transformer import AttentionCache, CreateAttentionCache
 
 
 class LeanTransformer(nn.Module):
@@ -39,7 +38,7 @@ class LeanTransformer(nn.Module):
             for i in range(self.config.num_hidden_layers):
                 group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
                 for layer in self.layer_groups[group_idx].layers:
-                    sequence.append(ActiveKwargs(layer.attention, ("attention_mask", "attn_cache", "seq_index"), use_first_output=True))
+                    sequence.append(ActiveKwargs(layer.attention, ("attention_mask",), use_first_output=True))
                     sequence.append(ActiveKwargs(layer.ffn, active_keys=()))
             sequential_cls = ReversibleWithKwargs if self.config.reversible else SequentialWithKwargs
             self._sequential = (sequential_cls(*sequence),)
@@ -76,28 +75,14 @@ class LeanTransformer(nn.Module):
             residual=not config.reversible,
         )
 
-    def _init_attn_cache(self, batch_size, num_heads, seq_length, head_size, device):
-        cache = {m:CreateAttentionCache(batch_size, num_heads, seq_length, head_size, device) for m in self.modules() if isinstance(m, LeanSelfAttention)}
-        return cache
-
-    def forward(self, hidden_states, attention_mask=None, attn_cache=None):    
+    def forward(self, hidden_states, attention_mask=None):
         """
         :param hidden_states: input embeddings, batch-first (e.g. [batch_size, seq_length, hidden-size])
         :param attention_mask: an additive mask with zeros for active elements and large negative values for masked
-        :param attn_cache: attention cache with prevous sequence tokens for K and V
         """
-        if attn_cache:
-            tokens_shape = hidden_states.size(1)
-            indices = torch.tensor([tokens_shape - 1]).to(hidden_states.device)
-            hidden_state_last = torch.index_select(hidden_states, 1, indices).to(hidden_states.device)
-            attention_mask_last = torch.index_select(attention_mask, 2, indices).to(hidden_states.device)
-            hidden_states = self._get_sequential()(
-                hidden_state_last, attention_mask=attention_mask_last,
-                attn_cache=attn_cache, seq_index=tokens_shape - 1)
-        else:
-            hidden_states = self._get_sequential()(hidden_states, attention_mask=attention_mask, attn_cache=attn_cache)
+        hidden_states = self._get_sequential()(hidden_states, attention_mask=attention_mask)
         return BaseModelOutput(last_hidden_state=self.post_layer_norm(hidden_states))
-    
+
     def init_weights(self):
         self.apply(self.config.init_weights)
 

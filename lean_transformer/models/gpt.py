@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """PyTorch GPT modules that do not hog your GPU memory """
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -228,75 +228,6 @@ class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
 
     def _init_weights(self, module: nn.Module):
         return self.config.init_weights(module)
-    
-    def prepare_inputs_for_generation(self, input_ids, attention_mask=None, attn_cache=None, **kwargs):
-        if attention_mask is None:
-            attention_mask = input_ids.new_ones(input_ids.shape)
-        return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "attn_cache": attn_cache,
-        }
-
-    def _prepare_model_inputs(
-        self,
-        inputs: Optional[torch.Tensor] = None,
-        bos_token_id: Optional[int] = None,
-        model_kwargs: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, Optional[str], Dict[str, torch.Tensor]]:
-        """
-        This function extracts the model-specific `inputs` for generation.
-        """
-        # 1. retrieve all kwargs that are non-None or non-model input related.
-        # some encoder-decoder models have different names for model and encoder
-        if (
-            self.config.is_encoder_decoder
-            and hasattr(self, "encoder")
-            and self.encoder.main_input_name != self.main_input_name
-        ):
-            input_name = self.encoder.main_input_name
-        else:
-            input_name = self.main_input_name
-
-        model_kwargs = {k: v for k, v in model_kwargs.items() if v is not None or k != input_name}
-        
-        model_kwargs["attn_cache"] = self.transformer._init_attn_cache(
-            inputs.shape[0],
-            self.config.num_attention_heads,
-            model_kwargs["max_len"],
-            self.config.hidden_size // self.config.num_attention_heads,
-            self.device
-        )
-
-        # 2. check whether model_input_name is passed as kwarg
-        # if yes and `inputs` is None use kwarg inputs
-        inputs_kwarg = model_kwargs.pop(input_name, None)
-        if inputs_kwarg is not None and inputs is not None:
-            raise ValueError(
-                f"`inputs`: {inputs}` were passed alongside "
-                f"{input_name} which is not allowed."
-                f"Make sure to either pass {inputs} or {input_name}=..."
-            )
-        elif inputs_kwarg is not None:
-            inputs = inputs_kwarg
-
-        # 3. models with `input_ids` can also make use of `inputs_embeds`
-        if self._can_retrieve_inputs_from_name(inputs, "inputs_embeds", model_kwargs):
-            inputs, input_name = model_kwargs["inputs_embeds"], "inputs_embeds"
-
-        # 4. Only encoder-decoder models can have non `input_ids` input format
-        if not self.config.is_encoder_decoder and input_name != "input_ids":
-            raise ValueError(
-                f"If {input_name} is passed as model-specific keyword "
-                "input then model has to be an encoder-decoder and not a "
-                f"{self.__class__.__name__}."
-            )
-
-        # 5. if `inputs` is still None, try to create `input_ids` from BOS token
-        if inputs is None:
-            inputs = self._prepare_input_ids_for_generation(bos_token_id, model_kwargs.get("encoder_outputs"))
-
-        return inputs, input_name, model_kwargs
 
     def forward(
         self,
@@ -310,7 +241,6 @@ class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
-        attn_cache=None,
     ):
         assert head_mask is None and output_attentions is None and output_hidden_states is None, "not implemented"
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -352,7 +282,7 @@ class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
         embedding_output = self.embeddings(
             input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         )
-        transformer_outputs = self.transformer(embedding_output, extended_attention_mask + causal_attention_mask, attn_cache=attn_cache)
+        transformer_outputs = self.transformer(embedding_output, extended_attention_mask + causal_attention_mask)
         lm_logits = self.lm_head(transformer_outputs.last_hidden_state)
 
         loss = None
