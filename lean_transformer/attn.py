@@ -7,6 +7,20 @@ from torch.utils.checkpoint import checkpoint
 
 from lean_transformer.rotary import RotaryEmbeddings
 
+from dataclasses import dataclass
+
+
+@dataclass
+class AttentionCache:
+    key: torch.tensor
+    value: torch.tensor
+
+def CreateAttentionCache(batch_size, num_heads, seq_length, head_size, device):
+    cache = AttentionCache(
+        key = torch.zeros((batch_size, num_heads, head_size, seq_length), device=device),
+        value = torch.zeros((batch_size, num_heads, seq_length, head_size), device=device)
+    )
+    return cache
 
 class LeanSelfAttention(nn.Module):
     def __init__(
@@ -63,12 +77,16 @@ class LeanSelfAttention(nn.Module):
         self.output_dropout = nn.Dropout(dropout, inplace=False)
         self.residual, self.checkpoint_attention_core = residual, checkpoint_attention_core
 
-    def forward(self, hidden_states, attention_mask=None, output_attentions=False):
-        hidden_states_ln = self.pre_layer_norm(hidden_states)
-        qkv_output = self.qkv_proj(hidden_states_ln)
+    def forward(self, hidden_states, attention_mask=None, output_attentions=False, attn_cache=None, seq_index=0):
+        if attn_cache:
+            attn_local_cache = attn_cache[self]
+        else:
+            attn_local_cache = None
+        hidden_states_ln = self.layer_norm(hidden_states)
+        qkv_output = self.dense_qkv(hidden_states_ln)
         query, key, value = qkv_output.split(self.hidden_size, dim=qkv_output.ndim - 1)
         attention_output, attention_probs = self._maybe_checkpoint(
-            self.attention_core, query, key, value, attention_mask
+            self.attention_core, query, key, value, attention_mask, attn_local_cache, seq_index
         )
         outputs = self.out_proj(attention_output)
         if self.post_layer_norm:
@@ -90,7 +108,7 @@ class SimpleAttentionCore(nn.Module):
         self.hidden_size, self.num_attention_heads = hidden_size, num_attention_heads
         self.attention_head_size = hidden_size // num_attention_heads
 
-    def forward(self, query, key, value, attention_mask):
+    def forward(self, query, key, value, attention_mask, attn_cache=None, seq_index=0):
         """
         :param query: [batch_size, query_seq_len, hidden_size]
         :param key: [batch_size, kv_seq_len, hidden_size]
@@ -105,7 +123,7 @@ class SimpleAttentionCore(nn.Module):
             assert torch.is_floating_point(attention_mask), "expected float mask with negative values for masked items"
         return self._attention_core_forward(
             query, key, value, attention_mask, self.num_attention_heads, self.attention_dropout.p,
-            self.training, scale_inplace=False,
+            self.training, scale_inplace=False, attn_cache=attn_cache, seq_index=seq_index
         )
 
     @staticmethod
@@ -114,7 +132,12 @@ class SimpleAttentionCore(nn.Module):
             key: torch.Tensor,
             value: torch.Tensor,
             attention_mask: Optional[torch.Tensor],
-            num_attention_heads: int, attention_dropout: float, training: bool, scale_inplace: bool
+            num_attention_heads: int,
+            attention_dropout: float,
+            training: bool,
+            scale_inplace: bool,
+            attn_cache: AttentionCache = None,
+            seq_index: int = 0
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # transpose from [batch, seq_length, full_hid_size] to [batch, num_heads, seq_length, head_size]
         new_query_shape = query.shape[:-1] + (num_attention_heads, -1)
@@ -128,8 +151,17 @@ class SimpleAttentionCore(nn.Module):
         value = value.view(new_kv_shape).permute(0, 2, 1, 3)
         del key  # not to confuse with key_transposed
 
+        if attn_cache:
+            attn_cache.key[:, :, :, seq_index] = key_transposed_scaled[:, :, :, 0]
+            attn_cache.value[:, :, seq_index, :] = value[:, :, 0, :]
+            key_ref = attn_cache.key[:, :, :, :seq_index + 1]
+            value_ref = attn_cache.value[:, :, :seq_index + 1, :]
+        else:
+            key_ref = key_transposed_scaled
+            value_ref = value
+
         # Take the dot product between "query" and "key" to get the raw attention scores
-        attention_scores = torch.matmul(query, key_transposed_scaled)
+        attention_scores = torch.matmul(query, key_ref)
 
         if attention_mask is not None:
             attention_scores += attention_mask
@@ -143,7 +175,7 @@ class SimpleAttentionCore(nn.Module):
             # seem a bit unusual, but is taken from the original Transformer paper.
             attention_probs = torch.dropout_(attention_probs, attention_dropout, training)
 
-        attention_output = torch.matmul(attention_probs, value)
+        attention_output = torch.matmul(attention_probs, value_ref)
         attention_output = attention_output.transpose(2, 1).flatten(2)
 
         return attention_output, attention_probs
@@ -160,12 +192,12 @@ class RotaryAttentionCore(SimpleAttentionCore):
             rotary_emb = RotaryEmbeddings(self.attention_head_size)
         self.rotary_emb = rotary_emb
 
-    def rotate(self, tensor: torch.Tensor):
+    def rotate(self, tensor: torch.Tensor, seq_index=None):
         """:param tensor: query or key, shape: [batch_size, query_seq_len, hidden_size]"""
         tensor_split_heads = tensor.view(*(tensor.shape[:-1] + (self.num_attention_heads, self.attention_head_size)))
-        return self.rotary_emb(tensor_split_heads).view(*tensor.shape)
+        return self.rotary_emb(tensor_split_heads, offset=seq_index).view(*tensor.shape)
 
-    def forward(self, query, key, value, attention_mask):
+    def forward(self, query, key, value, attention_mask, attn_cache=None, seq_index=0):
         return self._attention_core_forward(
-            self.rotate(query), self.rotate(key), value, attention_mask, self.num_attention_heads,
-            self.attention_dropout.p, self.training, scale_inplace=True)
+            self.rotate(query, seq_index=seq_index), self.rotate(key, seq_index=seq_index), value, attention_mask, self.num_attention_heads,
+            self.attention_dropout.p, self.training, scale_inplace=True, attn_cache=attn_cache, seq_index=seq_index)
