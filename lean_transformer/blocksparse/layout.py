@@ -221,6 +221,24 @@ def get_blocks_layout(
         layout = layout.repeat(out_features // smaller_features, in_features // smaller_features)
     return layout
 
+@register_blocksparse_layout("diagonal")
+def get_diagonal_layout(
+        out_features: int, in_features: int, block_size: int, stretch: bool = False):
+    smaller_features = min(out_features, in_features)
+
+    assert out_features % smaller_features == 0 and in_features % smaller_features == 0
+    n = smaller_features//block_size
+    layout = torch.triu(torch.tril(torch.ones([n, n], dtype=torch.bool), 3), -3)
+    print(layout.to(int))
+    assert smaller_features == layout.shape[0]*block_size
+    if stretch:
+        layout = layout[:, None, :, None].repeat(
+            1, out_features // smaller_features, 1, in_features // smaller_features
+        ).flatten(-2, -1).flatten(0, 1)
+    else:
+        layout = layout.repeat(out_features // smaller_features, in_features // smaller_features)
+    return layout
+
 
 @register_blocksparse_layout("random")
 @functools.lru_cache
