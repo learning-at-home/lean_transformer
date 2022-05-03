@@ -246,13 +246,12 @@ class VoidLinear(nn.Module):
         assert in_features % block_size == 0
         self.out_blocks, self.in_blocks = out_features // block_size, in_features // block_size
 
-        blocky_shape = (self.out_blocks, self.in_blocks, block_size, block_size)
-        self.register_buffer('zm', torch.randint(0, codebook_size, blocky_shape, dtype=torch.uint8), persistent=True)
-        self.codebooks = nn.Parameter(torch.empty(self.out_blocks * self.in_blocks, codebook_size))
+        self.register_buffer('zm', torch.randint(0, codebook_size, (self.out_features, self.in_features), dtype=torch.uint8), persistent=True)
+        self.codebooks = nn.Parameter(torch.empty(self.out_features, codebook_size))
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
         self.lowrank_second = nn.Parameter(torch.empty(out_features, lowrank_dim))
-        self.grid_scale = nn.Parameter(torch.ones(out_features // 4, 1, in_features // 4, 1))
+        self.grid_scale = nn.Parameter(torch.ones(out_features // 8, 1, in_features // 8, 1))
         self.scale = nn.Parameter(torch.ones(out_features))
         self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
 
@@ -273,9 +272,10 @@ class VoidLinear(nn.Module):
         dtype = torch.float16 if torch.is_autocast_enabled() else input.dtype
         random_matrix = cast_and_gather(self.zm, self.codebooks.to(dtype))
         random_matrix = torch.mul(
-            random_matrix.view(self.grid_scale.shape[0], 4, self.grid_scale.shape[2], 4),
+            random_matrix.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
             self.grid_scale.to(dtype)
         ).view(self.out_features, self.in_features)
+
         if torch.is_autocast_enabled():
             baseline = F.linear(input, random_matrix)
         else:
@@ -299,10 +299,5 @@ def cast_and_gather(zm: torch.ByteTensor, codebooks: nn.Parameter) -> torch.Tens
 
 
 def _cast_and_gather_inner(zm: torch.ByteTensor, codebooks: torch.Tensor) -> torch.Tensor:
-    out_blocks, in_blocks, block_size, _ = zm.shape
-    zm_flat_blocks = zm.view(out_blocks * in_blocks, block_size * block_size)
-    flat_blocks_permuted = torch.gather(codebooks, 1, zm_flat_blocks.long()).view(zm.shape).swapaxes_(1, 2)
-    # ^-- shape: [out_blocks, block_size, in_blocks, block_size]
-
-    return flat_blocks_permuted.reshape(out_blocks * block_size, in_blocks * block_size)  # <-- this creates a copy!
+    return torch.gather(codebooks, 1, zm.long()).view(zm.shape)
 
