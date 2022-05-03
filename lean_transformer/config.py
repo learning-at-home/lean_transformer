@@ -251,9 +251,8 @@ class VoidLinear(nn.Module):
         self.codebooks = nn.Parameter(torch.empty(self.out_blocks * self.in_blocks, codebook_size))
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
-        self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
-        self.grid_scale = nn.Parameter(torch.ones(out_features // 8, 1, in_features // 8, 1))
-        self.grid_bias = nn.Parameter(torch.zeros(out_features // 8, 1, in_features // 8, 1))
+        self.lowrank_second = nn.Parameter(torch.empty(out_features, lowrank_dim))
+        self.grid_scale = nn.Parameter(torch.ones(out_features // 4, 1, in_features // 4, 1))
         self.scale = nn.Parameter(torch.ones(out_features))
         self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
 
@@ -267,16 +266,14 @@ class VoidLinear(nn.Module):
         nn.init.zeros_(self.lowrank_second)
         nn.init.ones_(self.scale)
         nn.init.ones_(self.grid_scale)
-        nn.init.zeros_(self.grid_bias)
         if self.bias is not None:
             nn.init.zeros_(self.bias)
 
     def forward(self, input):
         dtype = torch.float16 if torch.is_autocast_enabled() else input.dtype
         random_matrix = cast_and_gather(self.zm, self.codebooks.to(dtype))
-        random_matrix = torch.addcmul(
-            self.grid_bias.to(dtype),
-            random_matrix.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
+        random_matrix = torch.mul(
+            random_matrix.view(self.grid_scale.shape[0], 4, self.grid_scale.shape[2], 4),
             self.grid_scale.to(dtype)
         ).view(self.out_features, self.in_features)
         if torch.is_autocast_enabled():
@@ -284,10 +281,8 @@ class VoidLinear(nn.Module):
         else:
             baseline = F.linear(input.to(random_matrix.dtype), random_matrix).to(input.dtype)
         hid = F.linear(input, self.lowrank_first)
-        bias_or_zeros = torch.zeros_like(self.scale) if self.bias is None else self.bias
-        intercept = torch.cat([self.scale, bias_or_zeros], dim=0)
-        multiplicative, additive = F.linear(hid, self.lowrank_second, intercept).split(self.out_features, dim=-1)
-        return torch.addcmul(additive, multiplicative, baseline)
+        lowrank = F.linear(hid, self.lowrank_second, self.bias)
+        return torch.addcmul(lowrank, self.scale, baseline)
 
 
 def cast_and_gather(zm: torch.ByteTensor, codebooks: nn.Parameter) -> torch.Tensor:
