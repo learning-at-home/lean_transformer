@@ -239,7 +239,7 @@ import math
 class VoidLinear(nn.Module):
     def __init__(
             self, in_features: int, out_features: int, *, lowrank_dim: int = 128,
-            codebook_size: int = 176, bias: bool = True):
+            codebook_size: int = 512, bias: bool = True):
         super().__init__()
         self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
 
@@ -248,8 +248,8 @@ class VoidLinear(nn.Module):
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
         self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
-        self.grid_scale = nn.Parameter(torch.ones(out_features // 8, 1, in_features // 8, 1))
-        self.grid_bias = nn.Parameter(torch.zeros(out_features // 8, 1, in_features // 8, 1))
+        self.grid_scale = nn.Parameter(torch.ones(out_features // 4, 1, in_features // 4, 1))
+        self.grid_bias = nn.Parameter(torch.zeros(out_features // 4, 1, in_features // 4, 1))
         self.scale = nn.Parameter(torch.ones(out_features))
         self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
 
@@ -272,7 +272,7 @@ class VoidLinear(nn.Module):
         random_matrix = cast_and_gather(self.zm, self.codebooks.to(dtype))
         random_matrix = torch.addcmul(
             self.grid_bias.to(dtype),
-            random_matrix.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
+            random_matrix.view(self.grid_scale.shape[0], 4, self.grid_scale.shape[2], 4),
             self.grid_scale.to(dtype)
         ).view(self.out_features, self.in_features)
         if torch.is_autocast_enabled():
