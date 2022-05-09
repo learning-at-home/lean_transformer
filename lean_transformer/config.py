@@ -243,7 +243,7 @@ class VoidLinear(nn.Module):
         super().__init__()
         self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
 
-        self.register_buffer('zm', torch.randint(0, codebook_size, (out_features, in_features), dtype=torch.uint8), persistent=True)
+        self.register_buffer('zm', torch.randint(0, codebook_size, (out_features, in_features), dtype=torch.int32), persistent=True)
         self.codebooks = nn.Parameter(torch.empty(self.out_features, codebook_size))
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
