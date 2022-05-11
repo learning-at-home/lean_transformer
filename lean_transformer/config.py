@@ -255,7 +255,7 @@ class VoidLinear(nn.Module):
         affine_shape = (out_features // affine_tile_size[0], 1, in_features // affine_tile_size[1], 1)
         self.grid_scale = nn.Parameter(torch.ones(*affine_shape))
         self.grid_bias = nn.Parameter(torch.zeros(*affine_shape))
-        self.sparse_adapter = nn.Parameter(torch.empty(out_features, in_features))
+        self.sparse_adapter = nn.Parameter(torch.empty(out_features, in_features, 1, 1, 1, 1, 1)) # used to recognize it in optimizer
         # ^-- sparsity enforced by the optimizer
         self.scale = nn.Parameter(torch.ones(out_features))
         self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
@@ -276,8 +276,9 @@ class VoidLinear(nn.Module):
             nn.init.zeros_(self.bias)
 
     def forward(self, input):
+        sparse_adapter = self.sparse_adapter.flatten(2)
         max_density = NNZ / (BLOCK_SIZE[0] * BLOCK_SIZE[1])
-        actual_density = (self.sparse_adapter != 0).sum().float() / self.sparse_adapter.numel()
+        actual_density = (sparse_adapter != 0).sum().float() / sparse_adapter.numel()
         torch._assert_async(actual_density <= max_density)
 
         matrix = self.frozen_random_matrix.view(
@@ -286,7 +287,7 @@ class VoidLinear(nn.Module):
         matrix = torch.addcmul(
             self.grid_bias.to(matrix.dtype), matrix, self.grid_scale.to(matrix.dtype)
         ).view(self.out_features, self.in_features)
-        matrix = matrix.add_(self.sparse_adapter)
+        matrix = matrix.add_(sparse_adapter)
 
         if torch.is_autocast_enabled():
             baseline = F.linear(input, matrix)
