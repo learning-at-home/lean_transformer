@@ -276,7 +276,7 @@ class VoidLinear(nn.Module):
             nn.init.zeros_(self.bias)
 
     def forward(self, input):
-        sparse_adapter = self.sparse_adapter.flatten(2)
+        sparse_adapter = self.sparse_adapter.view(self.sparse_adapter.shape[0], self.sparse_adapter.shape[1])
         max_density = NNZ / (BLOCK_SIZE[0] * BLOCK_SIZE[1])
         actual_density = (sparse_adapter != 0).sum().float() / sparse_adapter.numel()
         torch._assert_async(actual_density <= max_density)
@@ -349,12 +349,6 @@ class OptimizerWrapper(torch.optim.Optimizer):
 class SparsityInducingOptimizer(OptimizerWrapper):
     def __init__(self, optim: torch.optim.Optimizer):
         super().__init__(optim)
-        for param_group in optim.param_groups:
-            assert param_group.get('keep_sparse') in (True, False)
-
-    #             if param_group['keep_sparse']:
-    #                 assert isinstance(param_group.get('block_size'), tuple)
-    #                 assert isinstance(param_group.get('nnz'), int)
 
     def step(self, *args, **kwargs):
         # first, optimizer will perform base update on all weights, including pruned ones
@@ -365,11 +359,14 @@ class SparsityInducingOptimizer(OptimizerWrapper):
 
         with torch.no_grad():
             for param_group in self.param_groups:
-                if not param_group['keep_sparse']:
-                    continue
-                block_size = BLOCK_SIZE  # param_group['block_size']
-                nnz = NNZ  # param_group['nnz']
-                for matrix in param_group['params']:
+                for p in param_group['params']:
+                    if p.ndim != 7 or tuple(p.shape[-5:]) != (1, 1, 1, 1, 1): # sparse adapter marker (monkeypatch)
+                        continue
+                    matrix = p.view(p.shape[0], p.shape[1])
+                    assert matrix.data_ptr() == p.data_ptr()
+
+                    block_size = BLOCK_SIZE  # param_group['block_size']
+                    nnz = NNZ  # param_group['nnz']
                     out_features, in_features = matrix.shape
                     assert out_features % block_size[0] == in_features % block_size[1] == 0
 
