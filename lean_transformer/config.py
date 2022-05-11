@@ -178,7 +178,7 @@ class LeanTransformerConfig(PretrainedConfig):
 
         assert self.num_hidden_layers == self.total_num_layer_groups, "sharing is not implemented because yozh was lazy"
         assert self.lowrank_dim != 0, "need lowrank"
-        return VoidLinear(in_features, out_features, self.lowrank_dim, bias)
+        return VoidLinear(in_features, out_features, lowrank_dim=self.lowrank_dim, bias=bias)
 
     @lru_cache(maxsize=None)
     def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:
