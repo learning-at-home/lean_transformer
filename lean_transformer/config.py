@@ -232,24 +232,36 @@ class LeanTransformerConfig(PretrainedConfig):
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Tuple
 import math
+
+NNZ = 4096
+BLOCK_SIZE = (256, 256)
 
 
 class VoidLinear(nn.Module):
-    def __init__(self, in_features: int, out_features: int, lowrank_dim: int = 128, bias: bool = True):
+    def __init__(self, in_features: int, out_features: int,
+                 lowrank_dim: int = 64, affine_tile_size: Tuple[int, int] = (8, 8), bias: bool = True):
         super().__init__()
         self.in_features, self.out_features, self.lowrank_dim = in_features, out_features, lowrank_dim
+        self.affine_tile_size = affine_tile_size
+        assert len(affine_tile_size) == 2
 
-        self.register_buffer('zm', torch.empty(out_features, in_features, dtype=torch.half), persistent=True)
+        self.register_buffer('frozen_random_matrix', torch.empty(
+            out_features, in_features, dtype=torch.half), persistent=True)
+
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
         self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
-        self.grid_scale = nn.Parameter(torch.ones(out_features // 8, 1, in_features // 8, 1))
-        self.grid_bias = nn.Parameter(torch.zeros(out_features // 8, 1, in_features // 8, 1))
+        affine_shape = (out_features // affine_tile_size[0], 1, in_features // affine_tile_size[1], 1)
+        self.grid_scale = nn.Parameter(torch.ones(*affine_shape))
+        self.grid_bias = nn.Parameter(torch.zeros(*affine_shape))
+        self.sparse_adapter = nn.Parameter(torch.empty(out_features, in_features))
+        # ^-- sparsity enforced by the optimizer
         self.scale = nn.Parameter(torch.ones(out_features))
         self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
 
-        nn.init.xavier_normal_(self.zm)
-        print('CHECKSUM:', self.zm.sum())
+        nn.init.xavier_uniform_(self.frozen_random_matrix)
+        print('CHECKSUM:', self.frozen_random_matrix.sum())
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
             if torch.distributed.get_rank() == 0:
@@ -259,19 +271,27 @@ class VoidLinear(nn.Module):
         nn.init.ones_(self.scale)
         nn.init.ones_(self.grid_scale)
         nn.init.zeros_(self.grid_bias)
+        nn.init.zeros_(self.sparse_adapter)
         if self.bias is not None:
             nn.init.zeros_(self.bias)
 
     def forward(self, input):
-        random_matrix = torch.addcmul(
-            self.grid_bias.to(self.zm.dtype),
-            self.zm.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
-            self.grid_scale.to(self.zm.dtype)
+        max_density = NNZ / (BLOCK_SIZE[0] * BLOCK_SIZE[1])
+        actual_density = (self.sparse_adapter != 0).sum().float() / self.sparse_adapter.numel()
+        torch._assert_async(actual_density <= max_density)
+
+        matrix = self.frozen_random_matrix.view(
+            self.out_features // self.affine_tile_size[0], self.affine_tile_size[0],
+            self.in_features // self.affine_tile_size[1], self.affine_tile_size[1])
+        matrix = torch.addcmul(
+            self.grid_bias.to(matrix.dtype), matrix, self.grid_scale.to(matrix.dtype)
         ).view(self.out_features, self.in_features)
+        matrix = matrix.add_(self.sparse_adapter)
+
         if torch.is_autocast_enabled():
-            baseline = F.linear(input, random_matrix)
+            baseline = F.linear(input, matrix)
         else:
-            baseline = F.linear(input.to(random_matrix.dtype), random_matrix).to(input.dtype)
+            baseline = F.linear(input.to(matrix.dtype), matrix).to(input.dtype)
         hid = F.linear(input, self.lowrank_first)
         bias_or_zeros = torch.zeros_like(self.scale) if self.bias is None else self.bias
         intercept = torch.cat([self.scale, bias_or_zeros], dim=0)
@@ -279,3 +299,116 @@ class VoidLinear(nn.Module):
         return torch.addcmul(additive, multiplicative, baseline)
 
 
+class OptimizerWrapper(torch.optim.Optimizer):
+    r"""
+    A wrapper for pytorch.optimizer that forwards all methods to the wrapped optimizer
+    """
+
+    def __init__(self, optim: torch.optim.Optimizer):
+        object.__init__(self)
+        self.optim = optim
+
+    @property
+    def defaults(self):
+        return self.optim.defaults
+
+    @property
+    def state(self):
+        return self.optim.state
+
+    def __getstate__(self):
+        return self.optim.__getstate__()
+
+    def __setstate__(self, state):
+        self.optim.__setstate__(state)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({repr(self.optim)})"
+
+    def state_dict(self):
+        return self.optim.state_dict()
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        return self.optim.load_state_dict(state_dict)
+
+    def step(self, *args, **kwargs):
+        return self.optim.step(*args, **kwargs)
+
+    def zero_grad(self, *args, **kwargs):
+        return self.optim.zero_grad(*args, **kwargs)
+
+    @property
+    def param_groups(self):
+        return self.optim.param_groups
+
+    def add_param_group(self, param_group: dict) -> None:
+        return self.optim.add_param_group(param_group)
+
+
+class SparsityInducingOptimizer(OptimizerWrapper):
+    def __init__(self, optim: torch.optim.Optimizer):
+        super().__init__(optim)
+        for param_group in optim.param_groups:
+            assert param_group.get('keep_sparse') in (True, False)
+
+    #             if param_group['keep_sparse']:
+    #                 assert isinstance(param_group.get('block_size'), tuple)
+    #                 assert isinstance(param_group.get('nnz'), int)
+
+    def step(self, *args, **kwargs):
+        # first, optimizer will perform base update on all weights, including pruned ones
+        # (in the efficient version, we should only update on nnz largest gradients)
+        ret_value = self.optim.step(*args, **kwargs)
+
+        applied_l1 = False
+
+        with torch.no_grad():
+            for param_group in self.param_groups:
+                if not param_group['keep_sparse']:
+                    continue
+                block_size = BLOCK_SIZE  # param_group['block_size']
+                nnz = NNZ  # param_group['nnz']
+                for matrix in param_group['params']:
+                    out_features, in_features = matrix.shape
+                    assert out_features % block_size[0] == in_features % block_size[1] == 0
+
+                    # find new top-k values in each block by absolute value, prune the rest
+                    blockwise_shape = out_features // block_size[0], block_size[0], in_features // block_size[1], \
+                                      block_size[1]
+                    matrix_blockwise = matrix.view(blockwise_shape)
+                    flat_matrix_abs_blockwise = matrix_blockwise.clone().swapaxes_(1, 2).flatten(2).abs_()
+                    # [out_blocks, in_blocks, flat_block_size]
+
+                    block_numel = block_size[0] * block_size[1]
+                    smallest_kept_value_abs = flat_matrix_abs_blockwise.kthvalue(k=block_numel - nnz, dim=-1,
+                                                                                 keepdim=True).values
+                    # ^--nnz-th largest values, [out_blocks, in_blocks, 1]
+
+                    # invert mask to the original matrix shape
+                    pruned_mask = (flat_matrix_abs_blockwise <= smallest_kept_value_abs).view(
+                        *flat_matrix_abs_blockwise.shape[:-1], *block_size
+                    ).swapaxes_(2, 1).reshape(out_features, in_features)
+                    del flat_matrix_abs_blockwise
+
+                    # check: torch.logical_not(pruned_mask[:block_size[0], :block_size[1]]).sum() == nnz
+                    # unless there are duplicate values in matrix, in which case there are less nnz values
+
+                    # apply l1 "decay" to all parameters
+                    assert matrix_blockwise.data_ptr() == matrix.data_ptr()
+                    l1_grad_blockwise = smallest_kept_value_abs[:, None, :, :] * torch.sign(matrix_blockwise)
+                    matrix_blockwise.add_(l1_grad_blockwise, alpha=-param_group['lr'])
+                    # ^-- note: all kept values are guaranteed to be >= smallest_kept_value_abs
+
+                    # zero-out any parameters that are not in the top-nnz
+                    matrix[pruned_mask] = 0
+                    matrix.grad[pruned_mask] = 0  # just in case...
+
+                    # finally, zero-out the optimizer statistics that correspond to pruned values
+                    for key, opt_stat in self.state[matrix].items():
+                        if isinstance(opt_stat, torch.Tensor) and opt_stat.shape == pruned_mask.shape:
+                            opt_stat[pruned_mask] = 0
+                        else:
+                            assert key not in ('exp_avg', 'exp_avg_sq')
+                    applied_l1 = True
+        assert applied_l1, "did not apply l1 reg to any parameters"
+        return ret_value
