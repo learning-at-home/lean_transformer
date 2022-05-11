@@ -287,7 +287,7 @@ class VoidLinear(nn.Module):
         matrix = torch.addcmul(
             self.grid_bias.to(matrix.dtype), matrix, self.grid_scale.to(matrix.dtype)
         ).view(self.out_features, self.in_features)
-        matrix = matrix.add_(sparse_adapter)
+        matrix = matrix.add_(sparse_adapter.to(matrix.dtype))
 
         if torch.is_autocast_enabled():
             baseline = F.linear(input, matrix)
@@ -399,14 +399,14 @@ class SparsityInducingOptimizer(OptimizerWrapper):
 
                     # zero-out any parameters that are not in the top-nnz
                     matrix[pruned_mask] = 0
-                    matrix.grad[pruned_mask] = 0  # just in case...
 
                     # finally, zero-out the optimizer statistics that correspond to pruned values
-                    for key, opt_stat in self.state[matrix].items():
-                        if isinstance(opt_stat, torch.Tensor) and opt_stat.shape == pruned_mask.shape:
-                            opt_stat[pruned_mask] = 0
+                    assert len(self.state[p]) != 0
+                    for key, opt_stat in self.state[p].items():
+                        if hasattr(opt_stat, 'shape') and opt_stat.shape == p.shape:
+                            opt_stat.view_as(pruned_mask)[pruned_mask] = 0
                         else:
-                            assert key not in ('exp_avg', 'exp_avg_sq')
+                            assert key not in ('exp_avg', 'exp_avg_sq'), opt_stat
                     applied_l1 = True
         assert applied_l1, "did not apply l1 reg to any parameters"
         return ret_value
