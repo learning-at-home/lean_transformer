@@ -22,6 +22,7 @@ class GeneralizedMatrix(nn.Module):
     def __init__(self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None,
                  lowrank_dim: int = 0, blocksparse_backend: str = 'native'):
         super().__init__()
+        assert lowrank_dim == 0
         self.out_features, self.in_features = out_features, in_features
         self.blocksparse_backend = blocksparse_backend
         self._matmul_op = None
@@ -108,13 +109,15 @@ class GeneralizedLinear(nn.Linear):
 
     def __init__(self, matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
+        assert adapter_dim != 0
         self.matrix = matrix
         self.out_features, self.in_features = self.matrix.shape
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
+        self.scale = nn.Parameter(torch.ones(self.out_features))
 
         if adapter_dim != 0:
             self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
-            self.adapter_second = nn.Parameter(torch.zeros(self.out_features, adapter_dim))
+            self.adapter_second = nn.Parameter(torch.zeros(self.out_features * 2, adapter_dim))
 
             # initialize in accordance with https://arxiv.org/pdf/2106.09685.pdf
             nn.init.xavier_normal_(self.adapter_first)
@@ -144,9 +147,15 @@ class GeneralizedLinear(nn.Linear):
         return self.matrix.weight
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return _GeneralizedLinear.apply(
-            input, self.weight, self.bias, *self.get_combined_lowrank_components(),
-            self.matrix.forward_indices, self.matrix.backward_indices, self.matrix.matmul_op)
+        output_base = F.linear(input, self.matrix.weight)
+        bias_or_zeros = self.bias if self.bias is not None else torch.zeros_like(self.scale)
+        scale_and_bias = torch.cat([self.scale, bias_or_zeros], dim=0)
+        hid = F.linear(input, self.adapter_first)
+        multiplicative, additive = F.linear(hid, self.adapter_second, scale_and_bias).split(self.out_features, dim=-1)
+        return torch.addcmul(additive, multiplicative, output_base)
+        # return _GeneralizedLinear.apply(
+        #     input, self.weight, self.bias, *self.get_combined_lowrank_components(),
+        #     self.matrix.forward_indices, self.matrix.backward_indices, self.matrix.matmul_op)
 
 
 class _GeneralizedLinear(torch.autograd.Function):

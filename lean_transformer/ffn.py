@@ -44,12 +44,13 @@ class LeanFFN(nn.Module):
         i2h_proj: Optional[nn.Linear] = None,
         h2o_proj: Optional[nn.Linear] = None,
         residual: bool = True,
-        ffn_custom_grad: bool = True,
+        ffn_custom_grad: bool = False,
     ):
         super().__init__()
         i2h_out_features = intermediate_size * 2 if gated else intermediate_size
         self.i2h_proj = nn.Linear(hidden_size, i2h_out_features) if i2h_proj is None else i2h_proj
         self.h2o_proj = nn.Linear(intermediate_size, hidden_size) if h2o_proj is None else h2o_proj
+        ffn_custom_grad = False
         if ffn_custom_grad:
             assert type(self.i2h_proj) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
             assert type(self.h2o_proj) in (nn.Linear, GeneralizedLinear), "custom grad supports only nn.Linear and GeneralizedLinear"
@@ -64,6 +65,7 @@ class LeanFFN(nn.Module):
         self.ffn_custom_grad = ffn_custom_grad
 
     def forward(self, input):
+        assert not self.ffn_custom_grad
         return self._forward_custom(input) if self.ffn_custom_grad else self._forward_pytorch(input)
 
     def _forward_pytorch(self, input):
