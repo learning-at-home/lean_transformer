@@ -178,8 +178,8 @@ class LeanTransformerConfig(PretrainedConfig):
         matrix_index = matrix_outer_index * self.num_inner_matrices + matrix_inner_index
 
         weight_matrix = self.get_weight_matrix(key, matrix_index)
-        assert tuple(weight_matrix.shape) == (out_features, in_features)
-        return GeneralizedLinear(weight_matrix, self.adapter_dim, bias)
+        #assert tuple(weight_matrix.shape) == (out_features, in_features)
+        return GeneralizedLinear(weight_matrix, out_features, in_features, self.adapter_dim, bias)
 
     @lru_cache(maxsize=None)
     def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:
@@ -191,26 +191,13 @@ class LeanTransformerConfig(PretrainedConfig):
         :note: even if index is not used in this function, it is necessary to ensure that lru_cache works correctly
         """
         assert 0 <= index <= self.total_shared_matrix_sets
-        if key == "self_attn_qkv":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size * 3, self.weight_layout, self.lowrank_dim,
-                                     blocksparse_backend=self.blocksparse_backend)
-        if key == "self_attn_out":
-            return GeneralizedMatrix(self.hidden_size, self.hidden_size, self.weight_layout, self.lowrank_dim,
-                                     blocksparse_backend=self.blocksparse_backend)
-        if key == "ffn_first":
-            ffn_hidden_including_gate = self.intermediate_size * (2 if self.hidden_act_gated else 1)
-            return GeneralizedMatrix(self.hidden_size, ffn_hidden_including_gate, self.weight_layout, self.lowrank_dim,
-                                     blocksparse_backend=self.blocksparse_backend)
-        if key == "ffn_second":
-            return GeneralizedMatrix(self.intermediate_size, self.hidden_size, self.weight_layout, self.lowrank_dim,
-                                     blocksparse_backend=self.blocksparse_backend)
-
-        raise NotImplementedError(f"Unexpected matrix key: {key}")
+        assert self.total_shared_matrix_sets == 1
+        return GeneralizedMatrix(self.weight_layout, self.lowrank_dim, blocksparse_backend=self.blocksparse_backend)
 
     def init_weights(self, module: nn.Module):
         """Initialize the weights."""
         if isinstance(module, GeneralizedMatrix):
-            module.weight.data.normal_(mean=0.0, std=self.initializer_range)
+            module.codebook.data.normal_(mean=0.0, std=self.initializer_range)
         elif isinstance(module, GeneralizedLinear):
             if module.bias is not None:
                 module.bias.data.zero_()

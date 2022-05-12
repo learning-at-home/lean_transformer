@@ -15,56 +15,38 @@ from lean_transformer.blocksparse.native_backend import blocksparse_matmul, bloc
 from lean_transformer.blocksparse.triton_backend import TritonMatmulForLinearLayer, TRITON_PAD_TO
 from lean_transformer.utils import maybe_script, pad_to_multiple
 
+HID_SIZE = 2048
+BLOCK_SIZE = 128
+CODEBOOK_SIZE = 3 * 12 * (HID_SIZE // BLOCK_SIZE)
+
 
 class GeneralizedMatrix(nn.Module):
     """A module that stores a shared pytorch tensor for use in GeneralizedLinear layers"""
 
-    def __init__(self, in_features: int, out_features: int, blocksparse_layout: Optional[str] = None,
+    def __init__(self, blocksparse_layout: Optional[str] = None,
                  lowrank_dim: int = 0, blocksparse_backend: str = 'native'):
         super().__init__()
-        assert lowrank_dim == 0
-        self.out_features, self.in_features = out_features, in_features
+        assert lowrank_dim == 0 and blocksparse_layout is None
         self.blocksparse_backend = blocksparse_backend
         self._matmul_op = None
 
         if blocksparse_layout is None:
             assert blocksparse_backend == 'native', "triton is only used for block-sparse matrices"
             # fully-connected weight matrix
-            self.weight = nn.Parameter(torch.empty(out_features, in_features))
-            nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+            self.codebook = nn.Parameter(torch.empty(CODEBOOK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
+            torch.nn.init.normal_(self.codebook, std=math.sqrt(2.0 / (5 * HID_SIZE)))
             # note: this is usually overwritten by the model-wide initialization
             self.layout = self.forward_indices = self.backward_indices = None
         else:
-            # block-sparse weights with additive butterfly pattern
-            layout = get_blocksparse_layout(out_features, in_features, blocksparse_layout)
-            assert out_features / layout.shape[0] == in_features / layout.shape[1] == in_features // layout.shape[1]
-            block_size = in_features // layout.shape[1]
-            self.register_buffer("layout", layout, persistent=True)
+            raise NotImplementedError()
+        self.lowrank_first = self.lowrank_second = None
 
-            if blocksparse_backend == 'native':
-                # native backend
-                forward_indices, backward_indices = get_indices_from_layout(layout)
-                self.register_buffer("forward_indices", forward_indices, persistent=True)
-                self.register_buffer("backward_indices", backward_indices, persistent=True)
-                active_blocks_per_input = self.forward_indices.numel() // (in_features // block_size)
-                self.weight = nn.Parameter(torch.empty(in_features, active_blocks_per_input, block_size))
-            elif blocksparse_backend == 'triton':
-                self.weight = nn.Parameter(torch.empty(1, self.layout.sum().item(), block_size, block_size))
-                self.forward_indices = self.backward_indices = None
-                # note: we do not initialize triton op until forward pass in case user decides to change layout
-            else:
-                raise NotImplementedError(f"Unrecognized sparsity backend: {blocksparse_backend}")
-
-            torch.nn.init.normal_(self.weight, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
-            # note: this init is usually overwritten by the model-wide init
-
-        if lowrank_dim:
-            self.lowrank_first = nn.Parameter(torch.zeros(lowrank_dim, self.in_features))
-            self.lowrank_second = nn.Parameter(torch.zeros(self.out_features, lowrank_dim))
-            nn.init.normal_(self.lowrank_first, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
-            nn.init.normal_(self.lowrank_second, std=math.sqrt(2.0 / (5 * min(out_features, in_features))))
-        else:
-            self.lowrank_first = self.lowrank_second = None
+    def make_weight(self, codebook_scales):
+        # scales shape: [out_features // BLOCK_SIZE, in_features // BLOCK_SIZE, NUM_CODEBOOKS]
+        weight_flat = (codebook_scales.flatten(0, 1) @ self.codebook.flatten(1, -1)
+                       ).view(*codebook_scales.shape[:2], BLOCK_SIZE, BLOCK_SIZE).swapaxes_(1, 2)
+        # [out_features // BLOCK_SIZE, BLOCK_SIZE, in_features // BLOCK_SIZE, BLOCK_SIZE]
+        return weight_flat.flatten(2, -1).flatten(0, 1)
 
     @property
     def shape(self):
@@ -107,13 +89,17 @@ class GeneralizedMatrix(nn.Module):
 class GeneralizedLinear(nn.Linear):
     """A linear layer with a shared full-rank matrix and an individual low-rank adapter"""
 
-    def __init__(self, matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
+    def __init__(self, matrix: GeneralizedMatrix, out_features:int, in_features: int, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
         assert adapter_dim != 0
         self.matrix = matrix
-        self.out_features, self.in_features = self.matrix.shape
+        self.out_features, self.in_features = out_features, in_features
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
         self.scale = nn.Parameter(torch.ones(self.out_features))
+        assert min(out_features, in_features) == HID_SIZE
+        self.codebook_scales = nn.Parameter(torch.rand(out_features // BLOCK_SIZE, in_features // BLOCK_SIZE, CODEBOOK_SIZE))
+        with torch.no_grad():
+            self.codebook_scales.data /= self.codebook_scales.sum(dim=-1, keepdim=True)  # idk if this matters
 
         if adapter_dim != 0:
             self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
@@ -144,10 +130,10 @@ class GeneralizedLinear(nn.Linear):
 
     @property
     def weight(self):
-        return self.matrix.weight
+        return self.matrix.make_weight(self.codebook_scales)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        output_base = F.linear(input, self.matrix.weight)
+        output_base = F.linear(input, self.weight)
         bias_or_zeros = self.bias if self.bias is not None else torch.zeros_like(self.scale)
         scale_and_bias = torch.cat([self.scale, bias_or_zeros], dim=0)
         hid = F.linear(input, self.adapter_first)
