@@ -15,9 +15,9 @@ from lean_transformer.blocksparse.native_backend import blocksparse_matmul, bloc
 from lean_transformer.blocksparse.triton_backend import TritonMatmulForLinearLayer, TRITON_PAD_TO
 from lean_transformer.utils import maybe_script, pad_to_multiple
 
-HID_SIZE = 2048
-BLOCK_SIZE = 128
-CODEBOOK_SIZE = 3 * 12 * (HID_SIZE // BLOCK_SIZE)
+HID_SIZE = 1024
+BLOCK_SIZE = 256
+CODEBOOK_SIZE = 3 * 12 * (HID_SIZE // BLOCK_SIZE)   # equivalent to having 3 shared matrix sets, each with 12 matrices
 
 
 class GeneralizedMatrix(nn.Module):
