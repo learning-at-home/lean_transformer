@@ -117,7 +117,7 @@ class GeneralizedLinear(nn.Linear):
 
         if adapter_dim != 0:
             self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
-            self.adapter_second = nn.Parameter(torch.zeros(self.out_features * 2, adapter_dim))
+            self.adapter_second = nn.Parameter(torch.zeros(self.out_features, adapter_dim))
 
             # initialize in accordance with https://arxiv.org/pdf/2106.09685.pdf
             nn.init.xavier_normal_(self.adapter_first)
@@ -148,11 +148,9 @@ class GeneralizedLinear(nn.Linear):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         output_base = F.linear(input, self.matrix.weight)
-        bias_or_zeros = self.bias if self.bias is not None else torch.zeros_like(self.scale)
-        scale_and_bias = torch.cat([self.scale, bias_or_zeros], dim=0)
         hid = F.linear(input, self.adapter_first)
-        multiplicative, additive = F.linear(hid, self.adapter_second, scale_and_bias).split(self.out_features, dim=-1)
-        return torch.addcmul(additive, multiplicative, output_base)
+        additive = F.linear(hid, self.adapter_second, self.bias)
+        return torch.addcmul(additive, self.scale, output_base)
         # return _GeneralizedLinear.apply(
         #     input, self.weight, self.bias, *self.get_combined_lowrank_components(),
         #     self.matrix.forward_indices, self.matrix.backward_indices, self.matrix.matmul_op)
