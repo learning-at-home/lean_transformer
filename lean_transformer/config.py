@@ -212,14 +212,14 @@ class LeanTransformerConfig(PretrainedConfig):
         if isinstance(module, GeneralizedMatrix):
             module.weight.data.normal_(mean=0.0, std=self.initializer_range)
         elif isinstance(module, GeneralizedLinear):
-            if module.bias is not None:
-                module.bias.data.zero_()
+            if module.tile_bias is not None:
+                module.tile_bias.data.zero_()
         elif isinstance(module, nn.Linear):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             module.weight.data.normal_(mean=0.0, std=self.initializer_range)
-            if module.bias is not None:
-                module.bias.data.zero_()
+            if module.tile_bias is not None:
+                module.tile_bias.data.zero_()
         elif isinstance(module, nn.Embedding):
             module.weight.data.normal_(mean=0.0, std=self.initializer_range)
             if module.padding_idx is not None:

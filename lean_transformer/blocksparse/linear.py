@@ -103,55 +103,56 @@ class GeneralizedMatrix(nn.Module):
             self._matmul_op = TritonMatmulForLinearLayer(self.layout, block_size)
         return self._matmul_op
 
+BLOCK_SIZE = 128
+
 
 class GeneralizedLinear(nn.Linear):
     """A linear layer with a shared full-rank matrix and an individual low-rank adapter"""
 
     def __init__(self, matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
-        assert adapter_dim == 0
+        assert adapter_dim == 4 and matrix.lowrank_first is None
         self.matrix = matrix
         self.out_features, self.in_features = self.matrix.shape
-        self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
-        self.scale = nn.Parameter(torch.ones(self.out_features))
-        self.adapter_zlo = ZloebuchyAdapter(self.out_features, self.in_features)
+        self.out_blocks, self.in_blocks = out_blocks, in_blocks = (matrix.out_features // BLOCK_SIZE), (matrix.in_features // BLOCK_SIZE)
 
-
-        if adapter_dim != 0:
-            self.adapter_first = nn.Parameter(torch.zeros(adapter_dim, self.in_features))
-            self.adapter_second = nn.Parameter(torch.zeros(self.out_features * 2, adapter_dim))
-
-            # initialize in accordance with https://arxiv.org/pdf/2106.09685.pdf
-            nn.init.xavier_normal_(self.adapter_first)
-            nn.init.zeros_(self.adapter_second)
-        else:
-            self.adapter_first = self.adapter_second = None
-
-    def get_combined_lowrank_components(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        """Group together low-rank matrices from this layer's adapter and GeneralizedMatrix for faster matmul"""
-        if self.adapter_first is not None and self.matrix.lowrank_first is None:
-            return self.adapter_first, self.adapter_second
-        elif self.adapter_first is None and self.matrix.lowrank_first is not None:
-            return self.matrix.lowrank_first, self.matrix.lowrank_second
-        elif self.adapter_first is not None and self.matrix.lowrank_first is not None:
-            combined_first = torch.cat([self.matrix.lowrank_first, self.adapter_first], dim=0)
-            # ^-- cat0[(lowrank_dim x input_dim), (adapter_dim, input_dim)] -> (combined_dim, input_dim)
-            combined_second = torch.cat([self.matrix.lowrank_second, self.adapter_second], dim=1)
-            # ^-- cat1[(output_dim x lowrank_dim), (output_dim, adapter_dim)] -> (combined_dim, input_dim)
-            return combined_first, combined_second
-        else:
-            assert self.adapter_first is None and self.adapter_second is None
-            assert self.matrix.lowrank_first is None and self.matrix.lowrank_second is None
-            return None, None
+        std = math.sqrt(2.0 / min(self.out_features, self.in_features))
+        self.tile_first = nn.Parameter(torch.randn(in_blocks, BLOCK_SIZE, adapter_dim * out_blocks) * std)
+        self.tile_second = nn.Parameter(torch.zeros(in_blocks, out_blocks, adapter_dim, BLOCK_SIZE * 2))
+        self.tile_scale = nn.Parameter(torch.ones(in_blocks, out_blocks, BLOCK_SIZE))
+        self.tile_bias = nn.Parameter(torch.zeros(in_blocks, out_blocks, BLOCK_SIZE)) if bias else None
+        self.adapter_dim = adapter_dim
 
     @property
     def weight(self):
         return self.matrix.weight
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        output_base = F.linear(input, self.adapter_zlo(self.matrix.weight))
-        bias_or_zeros = self.bias if self.bias is not None else torch.zeros_like(self.scale)
-        return torch.addcmul(bias_or_zeros, self.scale, output_base)
+        if input.ndim != 2:
+            return self.forward(input.view(-1, input.shape[-1])).view(*input.shape[:-1], self.out_features)
+        assert input.ndim == 2
+        batch_size = input.shape[0]
+
+        input_tiles = input.view(input.shape[0], self.in_blocks, BLOCK_SIZE).swapaxes(0, 1)
+        tile_latents = torch.bmm(input_tiles, self.tile_first
+                                 ).view(self.in_blocks, batch_size, self.out_blocks, self.adapter_dim
+                                                               ).swapaxes_(1,2)
+        # ^-- [in_blocks, out_blocks, batch_size, latent_dim]
+        bias_or_zeros = self.tile_bias if self.tile_bias is not None else torch.zeros_like(self.tile_scale)
+        scale_and_bias = torch.cat([self.tile_scale, bias_or_zeros], -1)
+        scales, biases = torch.bmm(tile_latents.flatten(0, 1), self.tile_second.flatten(0, 1)
+                                   ).add_(scale_and_bias.flatten(0, 1).unsqueeze(1)
+                                          ).view(self.in_blocks, self.out_blocks, batch_size, BLOCK_SIZE * 2
+                                                 ).swapaxes_(1, 2).split(BLOCK_SIZE, dim=-1)
+        # ^-- each of scale [in_blocks, batch_size, out_blocks, block_size]
+
+        shared_matrix_tiles = self.matrix.weight.t().view(self.in_blocks, BLOCK_SIZE, self.out_blocks, BLOCK_SIZE)
+        out = torch.bmm(input_tiles, shared_matrix_tiles.flatten(2, 3)
+                        ).view(self.in_blocks, batch_size, self.out_blocks, BLOCK_SIZE)
+        out = torch.addcmul(biases, out, scales)
+        # ^-- each of scale [in_blocks, batch_size, out_blocks, block_size]
+        out = out.sum(0).view(batch_size, self.out_features)
+        return out
         # return _GeneralizedLinear.apply(
         #     input, self.weight, self.bias, *self.get_combined_lowrank_components(),
         #     self.matrix.forward_indices, self.matrix.backward_indices, self.matrix.matmul_op)
@@ -334,65 +335,3 @@ class _GeneralizedLinear(torch.autograd.Function):
         if needs_input_grad[0]:
             grad_input = grad_input_flat.view_as(input)
         return grad_input, grad_main_weight, grad_bias, grad_lowrank_first, grad_lowrank_second, None, None
-
-
-BLOCK_SIZE = 256
-TILE_SIZE = 4
-RNG_HID = 96
-RNG_POS_EMB = 8
-
-
-class ZloebuchyAdapter(torch.nn.Module):
-    def __init__(self, out_features: int, in_features: int):
-        super().__init__()
-        self.out_features, self.in_features = out_features, in_features
-        self.out_blocks, self.in_blocks = out_features // BLOCK_SIZE, in_features // BLOCK_SIZE
-        self.num_blocks = self.out_blocks * self.in_blocks
-        self.w1 = nn.Parameter(
-            torch.randn(self.num_blocks, TILE_SIZE ** 2, RNG_HID) * (2 / RNG_HID) ** 0.5
-        )
-        self.b1 = nn.Parameter(torch.zeros(self.num_blocks, RNG_HID))
-        self.emb_h = nn.Parameter(torch.randn(self.num_blocks, BLOCK_SIZE // TILE_SIZE, RNG_POS_EMB) * 0.1)
-        self.emb_w = nn.Parameter(torch.randn(self.num_blocks, BLOCK_SIZE // TILE_SIZE, RNG_POS_EMB) * 0.1)
-        shared_matrix_std = (2 / (5 * min(out_features, out_features))) ** 0.5
-        self.w2 = nn.Parameter(
-            torch.randn(self.num_blocks, RNG_HID, TILE_SIZE ** 2) * (2 / TILE_SIZE ** 2) ** 0.5 * shared_matrix_std
-        )
-        self.b2 = nn.Parameter(torch.zeros(self.num_blocks, TILE_SIZE ** 2))
-        self.scales = nn.Parameter(torch.ones(self.num_blocks, TILE_SIZE ** 2))
-
-    @staticmethod
-    @torch.jit.script
-    def _forward_script(shared_matrix, w1, b1, emb_h, emb_w, w2, b2, scales,
-                        TILE_SIZE: int, BLOCK_SIZE: int, RNG_HID: int, RNG_POS_EMB: int):
-        out_blocks, in_blocks = shared_matrix.shape[0] // BLOCK_SIZE, shared_matrix.shape[1] // BLOCK_SIZE
-        tiles_per_block = BLOCK_SIZE // TILE_SIZE
-        shared_matrix_blocks = shared_matrix.view(
-            out_blocks, tiles_per_block, TILE_SIZE,
-            in_blocks, tiles_per_block, TILE_SIZE
-        ).permute(0, 3, 1, 4, 2, 5).contiguous()
-        # [out_blocks, in_blocks, tiles_per_block_h, tiles_per_block_w, tile_size, tile_size]
-
-        shared_matrix_blocks_flat = shared_matrix_blocks.view(
-            out_blocks * in_blocks, tiles_per_block * tiles_per_block, TILE_SIZE * TILE_SIZE)
-
-        rng_hid = torch.bmm(shared_matrix_blocks_flat, w1).view(
-            out_blocks * in_blocks, BLOCK_SIZE // TILE_SIZE, BLOCK_SIZE // TILE_SIZE, RNG_HID)
-
-        rng_hid[:, :, :, :RNG_POS_EMB].add_(emb_h[:, :, None, :])
-        rng_hid[:, :, :, RNG_POS_EMB: 2 * RNG_POS_EMB].add_(emb_w[:, None, :, :])
-        rng_hid.add_(b1[:, None, None, :])
-        rng_hid = F.elu_(rng_hid)
-
-        rng_out = torch.bmm(rng_hid.flatten(1, 2), w2).add_(b2[:, None, :])
-        rng_out = rng_out.addcmul_(
-            shared_matrix_blocks_flat.to(rng_out.dtype), scales[:, None, :].to(rng_out.dtype)).view_as(
-            shared_matrix_blocks)
-
-        rng_out = rng_out.permute(0, 2, 4, 1, 3, 5).reshape_as(shared_matrix)
-        return rng_out
-
-    def forward(self, shared_matrix):
-        return self._forward_script(
-            shared_matrix, self.w1, self.b1, self.emb_h, self.emb_w, self.w2, self.b2, self.scales,
-            TILE_SIZE, BLOCK_SIZE, RNG_HID, RNG_POS_EMB)
