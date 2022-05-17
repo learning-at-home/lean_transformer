@@ -252,8 +252,10 @@ class VoidLinear(nn.Module):
 
         self.lowrank_first = nn.Parameter(torch.empty(lowrank_dim, in_features))
         self.lowrank_second = nn.Parameter(torch.empty(out_features * 2, lowrank_dim))
-        self.grid_scale = nn.Parameter(torch.ones(out_features // 8, 1, in_features // 8, 1))
-        self.grid_bias = nn.Parameter(torch.zeros(out_features // 8, 1, in_features // 8, 1))
+        self.grid_scale1 = nn.Parameter(torch.ones(out_features // 64, 1, in_features // 64, 64))
+        self.grid_scale2 = nn.Parameter(torch.ones(out_features // 64, 64, in_features // 64, 1))
+        self.grid_bias1 = nn.Parameter(torch.zeros(out_features // 64, 1, in_features // 64, 64))
+        self.grid_bias2 = nn.Parameter(torch.zeros(out_features // 64, 64, in_features // 64, 1))
         self.scale = nn.Parameter(torch.ones(out_features))
         self.bias = nn.Parameter(torch.zeros(out_features)) if bias else None
 
@@ -266,8 +268,10 @@ class VoidLinear(nn.Module):
         nn.init.xavier_uniform_(self.lowrank_first)
         nn.init.zeros_(self.lowrank_second)
         nn.init.ones_(self.scale)
-        nn.init.ones_(self.grid_scale)
-        nn.init.zeros_(self.grid_bias)
+        nn.init.ones_(self.grid_scale1)
+        nn.init.ones_(self.grid_scale2)
+        nn.init.zeros_(self.grid_bias1)
+        nn.init.zeros_(self.grid_bias2)
         if self.bias is not None:
             nn.init.zeros_(self.bias)
 
@@ -275,9 +279,9 @@ class VoidLinear(nn.Module):
         dtype = torch.float16 if torch.is_autocast_enabled() else input.dtype
         random_matrix = cast_and_gather(self.zm, self.codebooks.to(dtype))
         random_matrix = torch.addcmul(
-            self.grid_bias.to(dtype),
-            random_matrix.view(self.grid_scale.shape[0], 8, self.grid_scale.shape[2], 8),
-            self.grid_scale.to(dtype)
+            (self.grid_bias1.to(dtype) * self.grid_bias2.to(dtype)),
+            random_matrix.view(self.grid_scale1.shape[0], 64, self.grid_scale1.shape[2], 64),
+            (self.grid_scale1.to(dtype) * self.grid_scale2.to(dtype))
         ).view(self.out_features, self.in_features)
         if torch.is_autocast_enabled():
             baseline = F.linear(input, random_matrix)
