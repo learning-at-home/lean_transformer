@@ -179,7 +179,12 @@ class LeanTransformerConfig(PretrainedConfig):
 
         weight_matrix = self.get_weight_matrix(key, matrix_index)
         assert tuple(weight_matrix.shape) == (out_features, in_features)
-        return GeneralizedLinear(weight_matrix, self.adapter_dim, bias)
+        if 'attn' in key:
+            return GeneralizedLinear(weight_matrix, self.adapter_dim, bias)
+        elif 'ffn' in key:
+            return GeneralizedLinear(weight_matrix, adapter_dim=0, bias=bias)
+        else:
+            raise NotImplementedError()
 
     @lru_cache(maxsize=None)
     def get_weight_matrix(self, key: str, index: int) -> Optional[GeneralizedMatrix]:

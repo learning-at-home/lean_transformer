@@ -109,7 +109,7 @@ class GeneralizedLinear(nn.Linear):
 
     def __init__(self, matrix: GeneralizedMatrix, adapter_dim: int = 0, bias: bool = True):
         nn.Module.__init__(self)
-        assert adapter_dim != 0
+        # assert adapter_dim != 0
         self.matrix = matrix
         self.out_features, self.in_features = self.matrix.shape
         self.bias = nn.Parameter(torch.zeros(self.out_features)) if bias else None
@@ -149,9 +149,12 @@ class GeneralizedLinear(nn.Linear):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         output_base = F.linear(input, self.matrix.weight)
         bias_or_zeros = self.bias if self.bias is not None else torch.zeros_like(self.scale)
-        scale_and_bias = torch.cat([self.scale, bias_or_zeros], dim=0)
-        hid = F.linear(input, self.adapter_first)
-        multiplicative, additive = F.linear(hid, self.adapter_second, scale_and_bias).split(self.out_features, dim=-1)
+        if self.adapter_first is not None:
+            scale_and_bias = torch.cat([self.scale, bias_or_zeros], dim=0)
+            hid = F.linear(input, self.adapter_first)
+            multiplicative, additive = F.linear(hid, self.adapter_second, scale_and_bias).split(self.out_features, dim=-1)
+        else:
+            multiplicative, additive = self.scale, bias_or_zeros
         return torch.addcmul(additive, multiplicative, output_base)
         # return _GeneralizedLinear.apply(
         #     input, self.weight, self.bias, *self.get_combined_lowrank_components(),
