@@ -2,7 +2,9 @@ import math
 from functools import lru_cache
 from typing import Optional
 
+import torch
 from torch import nn as nn
+import torch.nn.functional as F
 from transformers import PretrainedConfig
 
 from lean_transformer.attn import SimpleAttentionCore, RotaryAttentionCore, RotaryEmbeddings
@@ -177,11 +179,13 @@ class LeanTransformerConfig(PretrainedConfig):
         matrix_inner_index = index % self.num_inner_matrices
         matrix_index = matrix_outer_index * self.num_inner_matrices + matrix_inner_index
 
-        weight_matrix = self.get_weight_matrix(key, matrix_index)
-        assert tuple(weight_matrix.shape) == (out_features, in_features)
+        assert self.adapter_dim == 0
+
         if 'attn' in key:
-            return GeneralizedLinear(weight_matrix, self.adapter_dim, bias)
+            return Blinear(in_features, out_features, bias)
         elif 'ffn' in key:
+            weight_matrix = self.get_weight_matrix(key, matrix_index)
+            assert tuple(weight_matrix.shape) == (out_features, in_features)
             return GeneralizedLinear(weight_matrix, adapter_dim=0, bias=bias)
         else:
             raise NotImplementedError()
@@ -232,3 +236,15 @@ class LeanTransformerConfig(PretrainedConfig):
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
+
+
+class Blinear(nn.Linear):
+    def forward(self, input):
+        weight1, weight2 = self.weight.split(self.in_features // 2, dim=1)
+        input1, input2 = input.split(self.in_features // 2, dim=-1)
+        ones = torch.ones(self.out_features)
+
+        if self.bias is not None:
+            return torch.addcmul(self.bias, F.linear(input1, weight1), F.linear(input2, weight2, ones))
+        else:
+            return F.linear(input1, weight1).mul_(F.linear(input2, weight2, ones))
