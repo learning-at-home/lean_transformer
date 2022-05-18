@@ -242,7 +242,7 @@ class Blinear(nn.Linear):
     def forward(self, input):
         weight1, weight2 = self.weight.split(self.in_features // 2, dim=1)
         input1, input2 = input.split(self.in_features // 2, dim=-1)
-        ones = torch.ones(self.out_features)
+        ones = torch.ones(self.out_features, device=input1.device, dtype=input1.dtype)
 
         if self.bias is not None:
             return torch.addcmul(self.bias, F.linear(input1, weight1), F.linear(input2, weight2, ones))
