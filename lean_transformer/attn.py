@@ -20,7 +20,7 @@ class LeanSelfAttention(nn.Module):
         out_proj: Optional[nn.Linear] = None,
         residual: bool = True,
         attention_core: Optional[nn.Module] = None,
-        checkpoint_attention_core: bool = True,
+        checkpoint_attention_core: bool = False,
         **kwargs,
     ):
         """
