@@ -241,6 +241,7 @@ class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
         output_hidden_states=None,
         return_dict=None,
     ):
+        print('in forward')
         assert head_mask is None and output_attentions is None and output_hidden_states is None, "not implemented"
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -269,7 +270,6 @@ class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
                 token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
             else:
                 logger.debug("Not creating token type ids: they are not used by the model")
-
         extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
         extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
@@ -283,6 +283,7 @@ class LeanGPTModel(OptimizationsMixin, PreTrainedModel):
         )
         transformer_outputs = self.transformer(embedding_output, extended_attention_mask + causal_attention_mask)
         lm_logits = self.lm_head(transformer_outputs.last_hidden_state)
+        print('got lm_logits!', labels is not None, return_dict)
 
         loss = None
         if labels is not None:
